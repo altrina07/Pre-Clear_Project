@@ -27,12 +27,14 @@ import { DocumentReview } from "./components/broker/DocumentReview";
 import { RequestDocuments } from "./components/broker/RequestDocuments";
 import { BrokerChat } from "./components/broker/BrokerChat";
 import { BrokerProfile } from "./components/broker/BrokerProfile";
+import { ApprovedShipments } from "./components/broker/ApprovedShipments";
 
 // Admin Pages
 import { AdminDashboard } from "./components/admin/AdminDashboard";
+import { AdminProfile } from "./components/admin/AdminProfile";
+
 import { UserManagement } from "./components/admin/UserManagement";
-import { SystemConfig } from "./components/admin/SystemConfig";
-import { AIRulesMonitoring } from "./components/admin/AIRulesMonitoring";
+// SystemConfig and AIRulesMonitoring removed from admin UI
 import { ApprovalLogs } from "./components/admin/ApprovalLogs";
 import { ShipmentTracking } from "./components/admin/ShipmentTracking";
 import { ImportExportRules } from "./components/admin/ImportExportRules";
@@ -147,6 +149,8 @@ export default function App() {
         return <BrokerDashboard onNavigate={handleNavigate} />;
       case "pending-review":
         return <PendingReview onNavigate={handleNavigate} />;
+      case "approved-shipments":
+        return <ApprovedShipments onNavigate={handleNavigate} />;
       case "broker-review":
         return (
           <BrokerReviewShipment
@@ -183,14 +187,13 @@ export default function App() {
         return <AdminDashboard onNavigate={handleNavigate} />;
       case "user-management":
         return <UserManagement />;
-      case "system-config":
-        return <SystemConfig />;
-      case "ai-monitoring":
-        return <AIRulesMonitoring />;
+      // system-config and ai-monitoring removed from admin UI
       case "approval-logs":
         return <ApprovalLogs />;
       case "tracking":
         return <ShipmentTracking />;
+      case "admin-profile":
+        return <AdminProfile />;
       case "import-export-rules":
         return <ImportExportRules />;
       default:
