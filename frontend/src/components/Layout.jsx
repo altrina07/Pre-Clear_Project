@@ -28,7 +28,7 @@ export function Layout({ children, userRole, currentPage, onNavigate, onLogout }
   const isAdmin = userRole === 'admin';
 
   const shipperNav = [
-    { id: 'dashboard', label: 'Home Dashboard', icon: LayoutDashboard },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'create-shipment', label: 'Create Shipment', icon: PackagePlus },
     { id: 'shipment-token-list', label: 'Shipment Tokens', icon: Shield },
     { id: 'booking', label: 'Shipment Booking', icon: MapPin },
