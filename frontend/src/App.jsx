@@ -3,6 +3,7 @@ import { HomePage } from "./components/HomePage";
 import { LoginPage } from "./components/LoginPage";
 import { SignupPage } from "./components/SignupPage";
 import { Layout } from "./components/Layout";
+import { AuthProvider } from "./contexts/AuthContext";
 
 // Shipper Pages
 import { ShipperDashboard } from "./components/shipper/ShipperDashboard";
@@ -40,7 +41,7 @@ import { ApprovalLogs } from "./components/admin/ApprovalLogs";
 import { ShipmentTracking } from "./components/admin/ShipmentTracking";
 import { ImportExportRules } from "./components/admin/ImportExportRules";
 
-export default function App() {
+function AppContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState("");
   const [currentPage, setCurrentPage] = useState("home");
@@ -107,7 +108,7 @@ export default function App() {
         );
       case "chat":
         return (
-          <ChatNotifications onNavigate={handleNavigate} />
+          <ChatNotifications shipment={currentShipment} onNavigate={handleNavigate} />
         );
       case "shipment-token":
         return (
@@ -242,5 +243,13 @@ export default function App() {
     >
       {renderPage()}
     </Layout>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }

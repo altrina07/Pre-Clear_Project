@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
   MapPin, Package, Truck, Clock, DollarSign, Info, AlertCircle, CheckCircle2, 
-  AlertTriangle, ChevronDown, Plus, Trash2, FileText, Globe, Settings, Users, Pencil
+  AlertTriangle, ChevronDown, Plus, Trash2, FileText, Globe, Settings, Users, Pencil, Sparkles, Upload
 } from 'lucide-react';
 import { shipmentsStore } from '../../store/shipmentsStore';
 import { suggestHSCode, validateAndCheckHSCode, getCurrencyByCountry } from '../../utils/validation';
@@ -17,6 +17,16 @@ const paymentMethods = ['Credit Card', 'Bank Transfer', 'Wire Transfer', 'Check'
 const currencies = ['USD', 'EUR', 'GBP', 'INR', 'CNY', 'JPY', 'CAD', 'AUD', 'SGD', 'CHF'];
 const packageTypes = ['Box', 'Pallet', 'Crate', 'Bag', 'Case', 'Envelope'];
 const uoms = ['kg', 'lb', 'pieces', 'meters', 'units', 'sets'];
+const reasonsForExport = [
+  'Sending a gift',
+  'Commercial Trade',
+  'Sample/Prototype',
+  'Return/Repair',
+  'Personal Effects',
+  'Temporary Import',
+  'Exhibition',
+  'Other'
+];
 
 // Country options (code + full name) shown in selects
 const countryOptions = [
@@ -176,7 +186,14 @@ const CheckboxField = ({ label, name, checked, onChange }) => (
 );
 
 export function ShipmentForm({ shipment, onNavigate }) {
-  const [formData, setFormData] = useState(shipment || {});
+  // Initialize form data with default values for all array fields
+  const [formData, setFormData] = useState(() => ({
+    packages: [],
+    products: [],
+    documents: [],
+    documentRequests: [],
+    ...shipment
+  }));
   const [profileCountry, setProfileCountry] = useState('');
   const [profileCurrency, setProfileCurrency] = useState('USD');
   const [profileData, setProfileData] = useState(null);
@@ -186,11 +203,12 @@ export function ShipmentForm({ shipment, onNavigate }) {
     shipper: false,
     consignee: false,
     packages: false,
-    products: false,
     service: false,
-    compliance: false,
     documents: false,
   });
+  const [requiredDocuments, setRequiredDocuments] = useState([]);
+  const [documentFiles, setDocumentFiles] = useState({});
+  const [analyzingDocuments, setAnalyzingDocuments] = useState(false);
   const [errors, setErrors] = useState({});
   const [pricing, setPricing] = useState({
     basePrice: 2400,
@@ -234,35 +252,31 @@ export function ShipmentForm({ shipment, onNavigate }) {
       };
 
       const resolvedCurrency = prev.currency || currency;
-      const updatedProducts = (prev.products && prev.products.length ? prev.products : [
+      // Initialize packages if not present
+      const updatedPackages = prev.packages && prev.packages.length > 0 ? prev.packages : [
         {
-          id: `PROD-${Date.now()}`,
-          name: '',
-          description: '',
-          hsCode: '',
-          category: '',
-          qty: '',
-          uom: '',
-          unitPrice: '',
-          totalValue: '',
-          originCountry: countryCode,
-          reasonForExport: '',
+          id: `PKG-${Date.now()}`,
+          type: '',
+          length: '',
+          width: '',
+          height: '',
+          dimUnit: 'cm',
+          weight: '',
+          weightUnit: 'kg',
+          stackable: false,
+          products: [],
         }
-      ]).map(prod => ({
-        ...prod,
-        originCountry: prod.originCountry || countryCode,
-      }));
+      ];
 
       return {
         ...prev,
         shipper: nextShipper,
         currency: resolvedCurrency,
         serviceLevel: prev.serviceLevel || 'Standard',
-        billTo: prev.billTo || 'Shipper',
-        products: updatedProducts,
+        packages: updatedPackages,
       };
     });
-    setExpandedSections(prev => ({ ...prev, shipper: true, service: true, products: true }));
+    setExpandedSections(prev => ({ ...prev, shipper: true, service: true, packages: true }));
   };
 
   // Auto-fill shipper info and currency from stored user profile on load
@@ -323,27 +337,43 @@ export function ShipmentForm({ shipment, onNavigate }) {
 
   const handleArrayChange = (arrayName, index, field, value) => {
     setFormData(prev => {
-      const newArray = [...prev[arrayName]];
+      // Ensure the array exists and is an array
+      const currentArray = Array.isArray(prev[arrayName]) ? prev[arrayName] : [];
+      const newArray = [...currentArray];
+      
+      // Ensure the item at index exists
+      if (!newArray[index]) {
+        newArray[index] = {};
+      }
+      
       newArray[index] = { ...newArray[index], [field]: value };
       return { ...prev, [arrayName]: newArray };
     });
   };
 
   const addArrayItem = (arrayName, template) => {
-    setFormData(prev => ({
-      ...prev,
-      [arrayName]: [...prev[arrayName], template]
-    }));
+    setFormData(prev => {
+      // Ensure the array exists and is an array
+      const currentArray = Array.isArray(prev[arrayName]) ? prev[arrayName] : [];
+      return {
+        ...prev,
+        [arrayName]: [...currentArray, template]
+      };
+    });
   };
 
   const removeArrayItem = (arrayName, index) => {
-    setFormData(prev => ({
-      ...prev,
-      [arrayName]: prev[arrayName].filter((_, i) => i !== index)
-    }));
+    setFormData(prev => {
+      // Ensure the array exists and is an array
+      const currentArray = Array.isArray(prev[arrayName]) ? prev[arrayName] : [];
+      return {
+        ...prev,
+        [arrayName]: currentArray.filter((_, i) => i !== index)
+      };
+    });
   };
 
-  // Calculate pricing
+  // Calculate pricing and customs value
   useEffect(() => {
     const serviceLevelMultiplier = {
       'Standard': 1.0,
@@ -352,10 +382,27 @@ export function ShipmentForm({ shipment, onNavigate }) {
       'Freight': 0.7,
     };
     
-    const basePrice = formData.declaredValue ? formData.declaredValue * 0.05 : 2400;
+    // Auto-calculate customs value from package products
+    let calculatedCustomsValue = 0;
+    if (formData.packages && Array.isArray(formData.packages)) {
+      formData.packages.forEach(pkg => {
+        if (pkg.products && Array.isArray(pkg.products)) {
+          pkg.products.forEach(prod => {
+            calculatedCustomsValue += parseFloat(prod.totalValue) || 0;
+          });
+        }
+      });
+    }
+    
+    // Update customs value in form data
+    if (calculatedCustomsValue > 0 && formData.customsValue !== calculatedCustomsValue) {
+      setFormData(prev => ({ ...prev, customsValue: calculatedCustomsValue }));
+    }
+    
+    const customsValue = formData.customsValue || calculatedCustomsValue || 0;
+    const basePrice = customsValue > 0 ? customsValue * 0.05 : 2400;
     const serviceCharge = basePrice * (serviceLevelMultiplier[formData.serviceLevel] || 1.0);
-    const insurance = formData.insuranceRequired ? (formData.declaredValue || 0) * 0.01 : 0;
-    const subtotal = basePrice + serviceCharge + pricing.customsClearance + insurance;
+    const subtotal = basePrice + serviceCharge + pricing.customsClearance;
     const tax = subtotal * 0.18;
     const total = subtotal + tax;
 
@@ -363,12 +410,12 @@ export function ShipmentForm({ shipment, onNavigate }) {
       basePrice,
       serviceCharge,
       customsClearance: pricing.customsClearance,
-      insurance,
+      insurance: 0,
       subtotal,
       tax,
       total
     });
-  }, [formData.declaredValue, formData.serviceLevel, formData.insuranceRequired]);
+  }, [formData.packages, formData.customsValue, formData.serviceLevel]);
 
   // Trigger HS code suggestions when product name/description/category change
   useEffect(() => {
@@ -433,13 +480,19 @@ export function ShipmentForm({ shipment, onNavigate }) {
       if (prev.currency !== desiredCurrency) {
         updated = { ...updated, currency: desiredCurrency };
       }
-      const updatedProducts = (prev.products || []).map(p => {
-        if (!p.originCountry) return { ...p, originCountry: code };
-        return p;
-      });
-      const productsChanged = JSON.stringify(updatedProducts) !== JSON.stringify(prev.products || []);
-      if (productsChanged) {
-        updated = { ...updated, products: updatedProducts };
+      // Update origin country for products within packages
+      if (prev.packages && Array.isArray(prev.packages)) {
+        const updatedPackages = prev.packages.map(pkg => {
+          if (pkg.products && Array.isArray(pkg.products)) {
+            const updatedProducts = pkg.products.map(p => ({
+              ...p,
+              originCountry: p.originCountry || code
+            }));
+            return { ...pkg, products: updatedProducts };
+          }
+          return pkg;
+        });
+        updated = { ...updated, packages: updatedPackages };
       }
       return updated;
     });
@@ -448,15 +501,38 @@ export function ShipmentForm({ shipment, onNavigate }) {
   const validateForm = () => {
     const newErrors = {};
     
-    if (!formData.referenceId) newErrors.referenceId = 'Reference ID is required';
+    // Reference ID removed from shipper UI — backend will generate if missing
     if (!formData.title) newErrors.title = 'Shipment title is required';
     if (!formData.mode) newErrors.mode = 'Mode is required';
     if (!formData.shipmentType) newErrors.shipmentType = 'Shipment type is required';
     if (!formData.shipper?.company) newErrors.shipperCompany = 'Shipper company is required';
     if (!formData.consignee?.company) newErrors.consigneeCompany = 'Consignee company is required';
     if (formData.packages?.length === 0) newErrors.packages = 'At least one package is required';
-    if (formData.products?.length === 0) newErrors.products = 'At least one product is required';
-    if (!formData.declaredValue || formData.declaredValue <= 0) newErrors.declaredValue = 'Declared value must be greater than 0';
+    
+    // Check that each package has at least one product
+    if (formData.packages && formData.packages.length > 0) {
+      formData.packages.forEach((pkg, idx) => {
+        if (!pkg.products || pkg.products.length === 0) {
+          newErrors[`package${idx}Products`] = `Package ${idx + 1} must have at least one product`;
+        }
+      });
+    }
+    
+    // Calculate and validate customs value
+    let calculatedCustomsValue = 0;
+    if (formData.packages && Array.isArray(formData.packages)) {
+      formData.packages.forEach(pkg => {
+        if (pkg.products && Array.isArray(pkg.products)) {
+          pkg.products.forEach(prod => {
+            calculatedCustomsValue += parseFloat(prod.totalValue) || 0;
+          });
+        }
+      });
+    }
+    
+    if (calculatedCustomsValue <= 0) {
+      newErrors.customsValue = 'Customs value must be greater than 0. Please add products with values.';
+    }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -478,9 +554,25 @@ export function ShipmentForm({ shipment, onNavigate }) {
     };
 
     // Ensure arrays exist
-    updatedShipment.products = updatedShipment.products || [];
     updatedShipment.packages = updatedShipment.packages || [];
     updatedShipment.documents = updatedShipment.documents || {};
+    
+    // Ensure each package has products array
+    updatedShipment.packages = updatedShipment.packages.map(pkg => ({
+      ...pkg,
+      products: pkg.products || []
+    }));
+    
+    // Calculate customs value from packages
+    let calculatedCustomsValue = 0;
+    updatedShipment.packages.forEach(pkg => {
+      if (pkg.products && Array.isArray(pkg.products)) {
+        pkg.products.forEach(prod => {
+          calculatedCustomsValue += parseFloat(prod.totalValue) || 0;
+        });
+      }
+    });
+    updatedShipment.customsValue = calculatedCustomsValue;
 
     // Save to store and navigate to details for AI evaluation
     try {
@@ -504,14 +596,6 @@ export function ShipmentForm({ shipment, onNavigate }) {
             icon={Truck}
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <InputField
-                label="Reference ID"
-                name="referenceId"
-                value={formData.referenceId || ''}
-                onChange={handleChange}
-                placeholder="REF-2024-001"
-                required
-              />
               <InputField
                 label="Shipment Title"
                 name="title"
@@ -543,20 +627,47 @@ export function ShipmentForm({ shipment, onNavigate }) {
                 onChange={handleChange}
                 options={pickupTypes}
               />
-              <InputField
-                label="Ship Date"
-                type="date"
-                name="shipDate"
-                value={formData.shipDate || ''}
-                onChange={handleChange}
-              />
-              <InputField
-                label="Expected Delivery"
-                type="date"
-                name="expectedDelivery"
-                value={formData.expectedDelivery || ''}
-                onChange={handleChange}
-              />
+              {formData.pickupType === 'Drop-off' && (
+                <InputField
+                  label="Estimated Drop-off Date"
+                  type="date"
+                  name="estimatedDropoffDate"
+                  value={formData.estimatedDropoffDate || ''}
+                  onChange={handleChange}
+                />
+              )}
+              {formData.pickupType === 'Scheduled Pickup' && (
+                <>
+                  <InputField
+                    label="Pickup Location"
+                    name="pickupLocation"
+                    value={formData.pickupLocation || ''}
+                    onChange={handleChange}
+                    placeholder="Enter pickup address"
+                  />
+                  <InputField
+                    label="Pickup Date"
+                    type="date"
+                    name="pickupDate"
+                    value={formData.pickupDate || ''}
+                    onChange={handleChange}
+                  />
+                  <InputField
+                    label="Earliest Pickup Time"
+                    type="time"
+                    name="pickupTimeEarliest"
+                    value={formData.pickupTimeEarliest || ''}
+                    onChange={handleChange}
+                  />
+                  <InputField
+                    label="Latest Pickup Time"
+                    type="time"
+                    name="pickupTimeLatest"
+                    value={formData.pickupTimeLatest || ''}
+                    onChange={handleChange}
+                  />
+                </>
+              )}
             </div>
           </CollapsibleSection>
 
@@ -662,15 +773,8 @@ export function ShipmentForm({ shipment, onNavigate }) {
                 disabled={!shipperEditable}
                 options={countryOptions.map(c => ({ value: c.code, label: c.name }))}
               />
-              <InputField
-                label="Tax ID"
-                name="taxId"
-                value={formData.shipper?.taxId || ''}
-                onChange={(e) => handleNestedChange('shipper', 'taxId', e.target.value)}
-                disabled={!shipperEditable}
-                placeholder="CN123456789"
-              />
               <div className="md:col-span-2">
+                {/* Tax ID removed from shipper UI for shippers; backend handles taxId if needed */}
                 <CheckboxField
                   label="Exporter of Record"
                   name="exporterOfRecord"
@@ -763,14 +867,8 @@ export function ShipmentForm({ shipment, onNavigate }) {
                 onChange={(e) => handleNestedChange('consignee', 'country', e.target.value)}
                 options={countryOptions.map(c => ({ value: c.code, label: c.name }))}
               />
-              <InputField
-                label="Tax ID"
-                name="taxId"
-                value={formData.consignee?.taxId || ''}
-                onChange={(e) => handleNestedChange('consignee', 'taxId', e.target.value)}
-                placeholder="US987654321"
-              />
               <div className="md:col-span-2">
+                {/* Tax ID removed from consignee UI for shippers; backend handles taxId if needed */}
                 <CheckboxField
                   label="Importer of Record"
                   name="importerOfRecord"
@@ -781,76 +879,272 @@ export function ShipmentForm({ shipment, onNavigate }) {
             </div>
           </CollapsibleSection>
 
-          {/* PACKAGES SECTION */}
+          {/* PACKAGE AND CONTENTS SECTION */}
           <CollapsibleSection
-            title="Packages"
+            title="Package and Contents"
             isOpen={expandedSections.packages}
             onToggle={() => toggleSection('packages')}
             icon={Package}
           >
-            <div className="space-y-4">
-              {formData.packages && formData.packages.map((pkg, idx) => (
-                <div key={idx} className="border border-slate-200 rounded-lg p-4 bg-slate-50">
+            <div className="space-y-6">
+              {formData.packages && formData.packages.map((pkg, pkgIdx) => (
+                <div key={pkgIdx} className="border border-slate-200 rounded-lg p-5 bg-white shadow-sm">
                   <div className="flex justify-between items-start mb-4">
-                    <h4 className="font-semibold text-slate-900">Package {idx + 1}</h4>
+                    <h4 className="font-semibold text-slate-900 text-lg">Package {pkgIdx + 1}</h4>
                     <button
-                      onClick={() => removeArrayItem('packages', idx)}
-                      className="text-red-600 hover:text-red-700"
+                      onClick={() => removeArrayItem('packages', pkgIdx)}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50 p-2 rounded transition-colors"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-5 h-5" />
                     </button>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <SelectField
-                      label="Package Type"
-                      name="type"
-                      value={pkg.type || ''}
-                      onChange={(e) => handleArrayChange('packages', idx, 'type', e.target.value)}
-                      options={packageTypes}
-                    />
-                    <InputField
-                      label="Length (cm)"
-                      type="number"
-                      name="length"
-                      value={pkg.length || ''}
-                      onChange={(e) => handleArrayChange('packages', idx, 'length', parseFloat(e.target.value))}
-                    />
-                    <InputField
-                      label="Width (cm)"
-                      type="number"
-                      name="width"
-                      value={pkg.width || ''}
-                      onChange={(e) => handleArrayChange('packages', idx, 'width', parseFloat(e.target.value))}
-                    />
-                    <InputField
-                      label="Height (cm)"
-                      type="number"
-                      name="height"
-                      value={pkg.height || ''}
-                      onChange={(e) => handleArrayChange('packages', idx, 'height', parseFloat(e.target.value))}
-                    />
-                    <InputField
-                      label="Weight"
-                      type="number"
-                      name="weight"
-                      value={pkg.weight || ''}
-                      onChange={(e) => handleArrayChange('packages', idx, 'weight', parseFloat(e.target.value))}
-                    />
-                    <SelectField
-                      label="Weight Unit"
-                      name="weightUnit"
-                      value={pkg.weightUnit || 'kg'}
-                      onChange={(e) => handleArrayChange('packages', idx, 'weightUnit', e.target.value)}
-                      options={['kg', 'lb']}
-                    />
-                    <div className="md:col-span-3">
-                      <CheckboxField
-                        label="Stackable"
-                        name="stackable"
-                        checked={pkg.stackable || false}
-                        onChange={(e) => handleArrayChange('packages', idx, 'stackable', e.target.checked)}
+                  
+                  {/* Package Details */}
+                  <div className="mb-6 pb-6 border-b border-slate-200">
+                    <h5 className="text-sm font-medium text-slate-700 mb-3">Package Details</h5>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <SelectField
+                        label="Package Type"
+                        name="type"
+                        value={pkg.type || ''}
+                        onChange={(e) => handleArrayChange('packages', pkgIdx, 'type', e.target.value)}
+                        options={packageTypes}
                       />
+                      <InputField
+                        label="Length (cm)"
+                        type="number"
+                        name="length"
+                        value={pkg.length || ''}
+                        onChange={(e) => handleArrayChange('packages', pkgIdx, 'length', parseFloat(e.target.value))}
+                      />
+                      <InputField
+                        label="Width (cm)"
+                        type="number"
+                        name="width"
+                        value={pkg.width || ''}
+                        onChange={(e) => handleArrayChange('packages', pkgIdx, 'width', parseFloat(e.target.value))}
+                      />
+                      <InputField
+                        label="Height (cm)"
+                        type="number"
+                        name="height"
+                        value={pkg.height || ''}
+                        onChange={(e) => handleArrayChange('packages', pkgIdx, 'height', parseFloat(e.target.value))}
+                      />
+                      <InputField
+                        label="Weight"
+                        type="number"
+                        name="weight"
+                        value={pkg.weight || ''}
+                        onChange={(e) => handleArrayChange('packages', pkgIdx, 'weight', parseFloat(e.target.value))}
+                      />
+                      <SelectField
+                        label="Weight Unit"
+                        name="weightUnit"
+                        value={pkg.weightUnit || 'kg'}
+                        onChange={(e) => handleArrayChange('packages', pkgIdx, 'weightUnit', e.target.value)}
+                        options={['kg', 'lb']}
+                      />
+                      <div className="md:col-span-3">
+                        <CheckboxField
+                          label="Stackable"
+                          name="stackable"
+                          checked={pkg.stackable || false}
+                          onChange={(e) => handleArrayChange('packages', pkgIdx, 'stackable', e.target.checked)}
+                        />
+                      </div>
                     </div>
+                  </div>
+
+                  {/* Products within Package */}
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <h5 className="text-sm font-medium text-slate-700">Product Contents</h5>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentProducts = pkg.products || [];
+                          const newProduct = {
+                            id: `PROD-${Date.now()}-${pkgIdx}`,
+                            name: '',
+                            description: '',
+                            hsCode: '',
+                            category: '',
+                            uom: '',
+                            qty: '',
+                            unitPrice: '',
+                            totalValue: '',
+                            originCountry: formData.shipper?.country || profileCountry || '',
+                            reasonForExport: '',
+                          };
+                          handleArrayChange('packages', pkgIdx, 'products', [...currentProducts, newProduct]);
+                        }}
+                        className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                      >
+                        <Plus className="w-4 h-4" /> Add Product
+                      </button>
+                    </div>
+                    
+                    {pkg.products && pkg.products.length > 0 ? (
+                      <div className="space-y-4">
+                        {pkg.products.map((product, prodIdx) => (
+                          <div key={product.id || prodIdx} className="border border-slate-200 rounded-lg p-4 bg-slate-50">
+                            <div className="flex justify-between items-start mb-3">
+                              <h6 className="font-medium text-slate-900">Product {prodIdx + 1}</h6>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updatedProducts = pkg.products.filter((_, i) => i !== prodIdx);
+                                  handleArrayChange('packages', pkgIdx, 'products', updatedProducts);
+                                }}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <InputField
+                                label="Product Name"
+                                name="name"
+                                value={product.name || ''}
+                                onChange={(e) => {
+                                  const updatedProducts = [...pkg.products];
+                                  updatedProducts[prodIdx] = { ...updatedProducts[prodIdx], name: e.target.value };
+                                  handleArrayChange('packages', pkgIdx, 'products', updatedProducts);
+                                }}
+                                placeholder="Electronic Integrated Circuits"
+                              />
+                              <InputField
+                                label="Category"
+                                name="category"
+                                value={product.category || ''}
+                                onChange={(e) => {
+                                  const updatedProducts = [...pkg.products];
+                                  updatedProducts[prodIdx] = { ...updatedProducts[prodIdx], category: e.target.value };
+                                  handleArrayChange('packages', pkgIdx, 'products', updatedProducts);
+                                }}
+                                placeholder="Electronics, Textiles, Medical, etc."
+                              />
+                              <div className="md:col-span-2">
+                                <InputField
+                                  label="Description"
+                                  name="description"
+                                  value={product.description || ''}
+                                  onChange={(e) => {
+                                    const updatedProducts = [...pkg.products];
+                                    updatedProducts[prodIdx] = { ...updatedProducts[prodIdx], description: e.target.value };
+                                    handleArrayChange('packages', pkgIdx, 'products', updatedProducts);
+                                  }}
+                                  placeholder="Product description"
+                                />
+                              </div>
+                              <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-slate-700 mb-1">
+                                  HS Code
+                                  <span className="text-red-600">*</span>
+                                </label>
+                                <input
+                                  type="text"
+                                  value={product.hsCode || ''}
+                                  onChange={(e) => {
+                                    const updatedProducts = [...pkg.products];
+                                    updatedProducts[prodIdx] = { ...updatedProducts[prodIdx], hsCode: e.target.value };
+                                    handleArrayChange('packages', pkgIdx, 'products', updatedProducts);
+                                  }}
+                                  placeholder="8541.10.00"
+                                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </div>
+                              <SelectField
+                                label="Unit of Measure"
+                                name="uom"
+                                value={product.uom || ''}
+                                onChange={(e) => {
+                                  const updatedProducts = [...pkg.products];
+                                  updatedProducts[prodIdx] = { ...updatedProducts[prodIdx], uom: e.target.value };
+                                  handleArrayChange('packages', pkgIdx, 'products', updatedProducts);
+                                }}
+                                options={uoms}
+                              />
+                              <InputField
+                                label="Quantity"
+                                type="number"
+                                name="qty"
+                                value={product.qty || ''}
+                                onChange={(e) => {
+                                  const qty = parseFloat(e.target.value) || 0;
+                                  const unitPrice = parseFloat(product.unitPrice) || 0;
+                                  const totalValue = qty * unitPrice;
+                                  const updatedProducts = [...pkg.products];
+                                  updatedProducts[prodIdx] = { 
+                                    ...updatedProducts[prodIdx], 
+                                    qty: qty,
+                                    totalValue: totalValue
+                                  };
+                                  handleArrayChange('packages', pkgIdx, 'products', updatedProducts);
+                                }}
+                              />
+                              <InputField
+                                label="Unit Price"
+                                type="number"
+                                name="unitPrice"
+                                value={product.unitPrice || ''}
+                                onChange={(e) => {
+                                  const unitPrice = parseFloat(e.target.value) || 0;
+                                  const qty = parseFloat(product.qty) || 0;
+                                  const totalValue = qty * unitPrice;
+                                  const updatedProducts = [...pkg.products];
+                                  updatedProducts[prodIdx] = { 
+                                    ...updatedProducts[prodIdx], 
+                                    unitPrice: unitPrice,
+                                    totalValue: totalValue
+                                  };
+                                  handleArrayChange('packages', pkgIdx, 'products', updatedProducts);
+                                }}
+                              />
+                              <InputField
+                                label="Total Value"
+                                type="number"
+                                name="totalValue"
+                                value={product.totalValue || ''}
+                                onChange={(e) => {
+                                  const updatedProducts = [...pkg.products];
+                                  updatedProducts[prodIdx] = { ...updatedProducts[prodIdx], totalValue: parseFloat(e.target.value) || 0 };
+                                  handleArrayChange('packages', pkgIdx, 'products', updatedProducts);
+                                }}
+                                disabled
+                              />
+                              <SelectField
+                                label="Origin Country"
+                                name="originCountry"
+                                value={product.originCountry || formData.shipper?.country || profileCountry || ''}
+                                onChange={(e) => {
+                                  const updatedProducts = [...pkg.products];
+                                  updatedProducts[prodIdx] = { ...updatedProducts[prodIdx], originCountry: e.target.value };
+                                  handleArrayChange('packages', pkgIdx, 'products', updatedProducts);
+                                }}
+                                options={countryOptions.map(c => ({ value: c.code, label: c.name }))}
+                              />
+                              <SelectField
+                                label="Reason for Export"
+                                name="reasonForExport"
+                                value={product.reasonForExport || ''}
+                                onChange={(e) => {
+                                  const updatedProducts = [...pkg.products];
+                                  updatedProducts[prodIdx] = { ...updatedProducts[prodIdx], reasonForExport: e.target.value };
+                                  handleArrayChange('packages', pkgIdx, 'products', updatedProducts);
+                                }}
+                                options={reasonsForExport}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-slate-500 text-sm">
+                        No products added yet. Click "Add Product" to add product details to this package.
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -865,220 +1159,15 @@ export function ShipmentForm({ shipment, onNavigate }) {
                   weight: '',
                   weightUnit: 'kg',
                   stackable: false,
-                })}
-                className="w-full py-2 border-2 border-dashed border-slate-300 rounded-lg text-slate-600 hover:border-slate-400 hover:text-slate-700 flex items-center justify-center gap-2"
-              >
-                <Plus className="w-4 h-4" /> Add Package
-              </button>
-            </div>
-          </CollapsibleSection>
-
-          {/* PRODUCTS SECTION */}
-          <CollapsibleSection
-            title="Products"
-            isOpen={expandedSections.products}
-            onToggle={() => toggleSection('products')}
-            icon={Package}
-          >
-            <div className="space-y-6">
-              {formData.products && formData.products.map((product, idx) => (
-                <div key={idx} className="border border-slate-200 rounded-lg p-5 bg-white shadow-sm hover:shadow-md transition-shadow">
-                  <div className="flex justify-between items-start mb-5">
-                    <div>
-                      <h4 className="font-bold text-slate-900 text-lg">Product {idx + 1}</h4>
-                      {product.category && <p className="text-xs text-slate-600 mt-1">Category: <span className="font-semibold text-slate-700">{product.category}</span></p>}
-                    </div>
-                    <button
-                      onClick={() => removeArrayItem('products', idx)}
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50 p-2 rounded transition-colors"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Product Basics */}
-                    <InputField
-                      label="Product Name"
-                      name="name"
-                      value={product.name || ''}
-                      onChange={(e) => handleArrayChange('products', idx, 'name', e.target.value)}
-                      placeholder="Electronic Integrated Circuits"
-                    />
-                    <InputField
-                      label="Category"
-                      name="category"
-                      value={product.category || ''}
-                      onChange={(e) => handleArrayChange('products', idx, 'category', e.target.value)}
-                      placeholder="Electronics, Textiles, Medical, etc."
-                    />
-                    <div className="md:col-span-2">
-                      <InputField
-                        label="Description"
-                        name="description"
-                        value={product.description || ''}
-                        onChange={(e) => handleArrayChange('products', idx, 'description', e.target.value)}
-                        placeholder="Product description"
-                      />
-                    </div>
-
-                    {/* HS CODE SECTION */}
-                    <div className="md:col-span-2 space-y-3">
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        HS Code
-                        <span className="text-red-600">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={product.hsCode || ''}
-                        onChange={(e) => handleArrayChange('products', idx, 'hsCode', e.target.value)}
-                        placeholder="8541.10.00"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      {/* HS Code loading indicator */}
-                      {loadingHsSuggestions[product.id] && (
-                        <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                          <p className="text-sm text-blue-700 flex items-center gap-2">
-                            <span className="inline-block w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-                            Analyzing product for HS code suggestions...
-                          </p>
-                        </div>
-                      )}
-
-                      {/* AI Suggested HS Codes - Attractive Cards */}
-                      {hsSuggestions[product.id] && hsSuggestions[product.id].length > 0 && (
-                        <div className="mt-4 p-4 bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-xl w-full">
-                          <h5 className="text-sm font-bold text-purple-900 mb-3 flex items-center gap-2">
-                            <span className="inline-block w-3 h-3 bg-purple-500 rounded-full"></span>
-                            AI Suggested HS Codes
-                          </h5>
-                          <div className="space-y-3 max-h-64 overflow-y-auto w-full">
-                            {hsSuggestions[product.id].map((sugg, sidx) => (
-                              <button
-                                key={sidx}
-                                type="button"
-                                onClick={() => {
-                                  handleArrayChange('products', idx, 'hsCode', sugg.code);
-                                  setSelectedHsIndex(prev => ({ ...prev, [product.id]: sidx }));
-                                }}
-                                className={`w-full p-3 rounded-lg text-left border-2 transition-all transform hover:scale-105 ${
-                                  selectedHsIndex[product.id] === sidx
-                                    ? 'border-purple-500 bg-white shadow-lg ring-2 ring-purple-200'
-                                    : 'border-purple-300 bg-white hover:border-purple-400 shadow'
-                                }`}
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="flex-1">
-                                    <div className="text-slate-900 font-mono font-bold text-base">{sugg.code}</div>
-                                    <div className="text-xs text-slate-600 mt-1">{sugg.description}</div>
-                                    {sugg.restrictions && sugg.restrictions.length > 0 && (
-                                      <div className="text-xs text-slate-500 mt-2 italic">{sugg.restrictions.join(' • ')}</div>
-                                    )}
-                                  </div>
-                                  <div className="flex flex-col items-end gap-1">
-                                    {sugg.status === 'valid' && <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded">Valid</span>}
-                                    {sugg.status === 'restricted' && <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-semibold rounded">Restricted</span>}
-                                    {sugg.status === 'banned' && <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-semibold rounded">Banned</span>}
-                                  </div>
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* HS Validation Result */}
-                      {hsValidation[product.id] && (
-                        <div className={`mt-3 p-3 rounded-lg border-l-4 ${
-                          hsValidation[product.id].status === 'valid'
-                            ? 'bg-green-50 border-l-green-500'
-                            : hsValidation[product.id].status === 'restricted'
-                            ? 'bg-amber-50 border-l-amber-500'
-                            : 'bg-red-50 border-l-red-500'
-                        }`}>
-                          <p className={`text-sm font-medium ${
-                            hsValidation[product.id].status === 'valid'
-                              ? 'text-green-900'
-                              : hsValidation[product.id].status === 'restricted'
-                              ? 'text-amber-900'
-                              : 'text-red-900'
-                          }`}>
-                            {hsValidation[product.id].message}
-                          </p>
-                          {hsValidation[product.id].requiredDocs && hsValidation[product.id].requiredDocs.length > 0 && (
-                            <div className="mt-2 text-xs text-slate-700">
-                              <span className="font-semibold">Required Docs:</span> {hsValidation[product.id].requiredDocs.join(', ')}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Quantity & Pricing */}
-                    <InputField
-                      label="Quantity"
-                      type="number"
-                      name="qty"
-                      value={product.qty || ''}
-                      onChange={(e) => handleArrayChange('products', idx, 'qty', parseFloat(e.target.value))}
-                    />
-                    <SelectField
-                      label="Unit of Measure"
-                      name="uom"
-                      value={product.uom || ''}
-                      onChange={(e) => handleArrayChange('products', idx, 'uom', e.target.value)}
-                      options={uoms}
-                    />
-                    <InputField
-                      label="Unit Price"
-                      type="number"
-                      name="unitPrice"
-                      value={product.unitPrice || ''}
-                      onChange={(e) => handleArrayChange('products', idx, 'unitPrice', parseFloat(e.target.value))}
-                    />
-                    <InputField
-                      label="Total Value"
-                      type="number"
-                      name="totalValue"
-                      value={product.totalValue || ''}
-                      onChange={(e) => handleArrayChange('products', idx, 'totalValue', parseFloat(e.target.value))}
-                    />
-                    <SelectField
-                      label="Origin Country"
-                      name="originCountry"
-                      value={product.originCountry || formData.shipper?.country || profileCountry || ''}
-                      onChange={(e) => handleArrayChange('products', idx, 'originCountry', e.target.value)}
-                      options={countryOptions.map(c => ({ value: c.code, label: c.name }))}
-                    />
-                    <InputField
-                      label="Reason for Export"
-                      name="reasonForExport"
-                      value={product.reasonForExport || ''}
-                      onChange={(e) => handleArrayChange('products', idx, 'reasonForExport', e.target.value)}
-                      placeholder="Commercial Trade"
-                    />
-                  </div>
-                </div>
-              ))}
-              <button
-                onClick={() => addArrayItem('products', {
-                  id: `PROD-${Date.now()}`,
-                  name: '',
-                  description: '',
-                  hsCode: '',
-                  category: '',
-                  qty: '',
-                  uom: '',
-                  unitPrice: '',
-                  totalValue: '',
-                  originCountry: profileCountry || formData.shipper?.country || '',
-                  reasonForExport: '',
+                  products: [],
                 })}
                 className="w-full py-3 border-2 border-dashed border-blue-300 rounded-lg text-blue-600 hover:border-blue-400 hover:text-blue-700 hover:bg-blue-50 flex items-center justify-center gap-2 transition-colors font-medium"
               >
-                <Plus className="w-5 h-5" /> Add Product
+                <Plus className="w-5 h-5" /> Add Package
               </button>
             </div>
           </CollapsibleSection>
+
 
           {/* SERVICE & BILLING SECTION */}
           <CollapsibleSection
@@ -1096,41 +1185,40 @@ export function ShipmentForm({ shipment, onNavigate }) {
                 options={serviceLevels}
               />
               <SelectField
-                label="Incoterm"
-                name="incoterm"
-                value={formData.incoterm || ''}
-                onChange={handleChange}
-                options={incoterms}
-              />
-              <SelectField
-                label="Bill To"
-                name="billTo"
-                value={formData.billTo || ''}
-                onChange={handleChange}
-                options={billToOptions}
-              />
-              <InputField
-                label="Billing Account Number"
-                name="billingAccountNumber"
-                value={formData.billingAccountNumber || ''}
-                onChange={handleChange}
-                placeholder="ACC-12345678"
-              />
-              <SelectField
                 label="Currency"
                 name="currency"
                 value={formData.currency || ''}
                 onChange={handleChange}
                 options={currencies}
               />
-              <InputField
-                label="Declared Value"
-                type="number"
-                name="declaredValue"
-                value={formData.declaredValue || ''}
-                onChange={handleChange}
-                required
-              />
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Customs Value
+                  <span className="text-red-600">*</span>
+                </label>
+                <input
+                  type="number"
+                  name="customsValue"
+                  value={(() => {
+                    // Auto-calculate as sum of all package product total values
+                    if (!formData.packages || formData.packages.length === 0) return '';
+                    let total = 0;
+                    formData.packages.forEach(pkg => {
+                      if (pkg.products && Array.isArray(pkg.products)) {
+                        pkg.products.forEach(prod => {
+                          total += parseFloat(prod.totalValue) || 0;
+                        });
+                      }
+                    });
+                    return total > 0 ? total : '';
+                  })()}
+                  onChange={handleChange}
+                  disabled
+                  required
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-100 text-slate-500 cursor-not-allowed"
+                />
+                <p className="mt-1 text-xs text-slate-500">Automatically calculated from package product values</p>
+              </div>
               <SelectField
                 label="Payment Timing"
                 name="paymentTiming"
@@ -1138,155 +1226,141 @@ export function ShipmentForm({ shipment, onNavigate }) {
                 onChange={handleChange}
                 options={paymentTimings}
               />
-              <SelectField
-                label="Payment Method"
-                name="paymentMethod"
-                value={formData.paymentMethod || ''}
-                onChange={handleChange}
-                options={paymentMethods}
-              />
-              <div className="md:col-span-2">
-                <CheckboxField
-                  label="Insurance Required"
-                  name="insuranceRequired"
-                  checked={formData.insuranceRequired || false}
-                  onChange={handleChange}
-                />
-              </div>
             </div>
           </CollapsibleSection>
 
-          {/* COMPLIANCE SECTION */}
+          {/* COMPLIANCE & ATTACHMENTS SECTION */}
           <CollapsibleSection
-            title="Compliance & Restrictions"
-            isOpen={expandedSections.compliance}
-            onToggle={() => toggleSection('compliance')}
-            icon={AlertTriangle}
-          >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <CheckboxField
-                label="Contains Dangerous Goods"
-                name="dangerousGoods"
-                checked={formData.dangerousGoods || false}
-                onChange={handleChange}
-              />
-              <CheckboxField
-                label="Contains Lithium Batteries"
-                name="lithiumBattery"
-                checked={formData.lithiumBattery || false}
-                onChange={handleChange}
-              />
-              <CheckboxField
-                label="Food/Pharma Product"
-                name="foodPharmaFlag"
-                checked={formData.foodPharmaFlag || false}
-                onChange={handleChange}
-              />
-              <CheckboxField
-                label="Temperature Controlled Required"
-                name="temperatureControlled"
-                checked={formData.temperatureControlled || false}
-                onChange={handleChange}
-              />
-              <InputField
-                label="ECCN (Export Control Classification Number)"
-                name="eccn"
-                value={formData.eccn || ''}
-                onChange={handleChange}
-                placeholder="0A919"
-              />
-              <CheckboxField
-                label="Export License Required"
-                name="exportLicenseRequired"
-                checked={formData.exportLicenseRequired || false}
-                onChange={handleChange}
-              />
-              {formData.exportLicenseRequired && (
-                <InputField
-                  label="License Number"
-                  name="licenseNumber"
-                  value={formData.licenseNumber || ''}
-                  onChange={handleChange}
-                  placeholder="EXP-LIC-12345"
-                />
-              )}
-              <CheckboxField
-                label="Item Contains Restricted Materials"
-                name="restrictedFlag"
-                checked={formData.restrictedFlag || false}
-                onChange={handleChange}
-              />
-              <CheckboxField
-                label="Suspected Sanctioned Country"
-                name="sanctionedCountryFlag"
-                checked={formData.sanctionedCountryFlag || false}
-                onChange={handleChange}
-              />
-            </div>
-          </CollapsibleSection>
-
-          {/* DOCUMENTS SECTION */}
-          <CollapsibleSection
-            title="Attachments"
+            title="Compliance & Attachments"
             isOpen={expandedSections.documents}
             onToggle={() => toggleSection('documents')}
-            icon={FileText}
+            icon={Sparkles}
           >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <CheckboxField
-                label="Commercial Invoice"
-                name="commercialInvoice"
-                checked={formData.documents?.commercialInvoice || false}
-                onChange={(e) => handleNestedChange('documents', 'commercialInvoice', e.target.checked)}
-              />
-              <CheckboxField
-                label="Packing List"
-                name="packingList"
-                checked={formData.documents?.packingList || false}
-                onChange={(e) => handleNestedChange('documents', 'packingList', e.target.checked)}
-              />
-              <CheckboxField
-                label="Certificate of Origin"
-                name="certificateOfOrigin"
-                checked={formData.documents?.certificateOfOrigin || false}
-                onChange={(e) => handleNestedChange('documents', 'certificateOfOrigin', e.target.checked)}
-              />
-              <CheckboxField
-                label="Export License"
-                name="exportLicense"
-                checked={formData.documents?.exportLicense || false}
-                onChange={(e) => handleNestedChange('documents', 'exportLicense', e.target.checked)}
-              />
-              <CheckboxField
-                label="Import License"
-                name="importLicense"
-                checked={formData.documents?.importLicense || false}
-                onChange={(e) => handleNestedChange('documents', 'importLicense', e.target.checked)}
-              />
-              <CheckboxField
-                label="Safety Data Sheet (SDS)"
-                name="sds"
-                checked={formData.documents?.sds || false}
-                onChange={(e) => handleNestedChange('documents', 'sds', e.target.checked)}
-              />
-              <CheckboxField
-                label="Airway Bill (AWB)"
-                name="awb"
-                checked={formData.documents?.awb || false}
-                onChange={(e) => handleNestedChange('documents', 'awb', e.target.checked)}
-              />
-              <CheckboxField
-                label="Bill of Lading (BOL)"
-                name="bol"
-                checked={formData.documents?.bol || false}
-                onChange={(e) => handleNestedChange('documents', 'bol', e.target.checked)}
-              />
-              <CheckboxField
-                label="CMR (International Road Transport)"
-                name="cmr"
-                checked={formData.documents?.cmr || false}
-                onChange={(e) => handleNestedChange('documents', 'cmr', e.target.checked)}
-              />
+            <div className="space-y-6">
+              {/* AI Document Suggestions */}
+              <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-xl p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <Sparkles className="w-6 h-6 text-purple-600" />
+                  <h4 className="text-lg font-semibold text-purple-900">AI-Powered Required Documents</h4>
+                </div>
+                <p className="text-sm text-purple-800 mb-4">
+                  Based on your shipment details, the following documents are required for customs clearance:
+                </p>
+                
+                {analyzingDocuments ? (
+                  <div className="flex items-center gap-3 p-4 bg-white rounded-lg border border-purple-200">
+                    <span className="inline-block w-3 h-3 bg-purple-500 rounded-full animate-pulse"></span>
+                    <span className="text-sm text-purple-700">Analyzing shipment details and product information...</span>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {requiredDocuments.length > 0 ? (
+                      requiredDocuments.map((doc, idx) => (
+                        <div key={idx} className="bg-white rounded-lg p-4 border border-purple-200 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <FileText className="w-5 h-5 text-purple-600" />
+                            <div>
+                              <p className="font-medium text-slate-900">{doc.name}</p>
+                              {doc.description && (
+                                <p className="text-xs text-slate-600 mt-1">{doc.description}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {doc.required && (
+                              <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-semibold rounded">Required</span>
+                            )}
+                            <input
+                              type="file"
+                              accept=".pdf,.jpg,.jpeg,.png"
+                              onChange={(e) => {
+                                const file = e.target.files[0];
+                                if (file) {
+                                  setDocumentFiles(prev => ({ ...prev, [doc.name]: file }));
+                                }
+                              }}
+                              className="hidden"
+                              id={`file-${idx}`}
+                            />
+                            <label
+                              htmlFor={`file-${idx}`}
+                              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors cursor-pointer text-sm flex items-center gap-2"
+                            >
+                              <Upload className="w-4 h-4" />
+                              {documentFiles[doc.name] ? 'Change File' : 'Upload'}
+                            </label>
+                            {documentFiles[doc.name] && (
+                              <span className="text-sm text-green-700 flex items-center gap-1">
+                                <CheckCircle2 className="w-4 h-4" />
+                                {documentFiles[doc.name].name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="bg-white rounded-lg p-4 border border-purple-200 text-center">
+                        <p className="text-sm text-slate-600">Click "Analyze Documents" to get AI-powered document suggestions</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                <div className="mt-6 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setAnalyzingDocuments(true);
+                      // Simulate AI analysis - in real app, this would call an API
+                      await new Promise(resolve => setTimeout(resolve, 1500));
+                      
+                      // Generate document suggestions based on shipment data
+                      const suggestedDocs = [
+                        { name: 'Commercial Invoice', required: true, description: 'Required for all shipments' },
+                        { name: 'Packing List', required: true, description: 'Required for all shipments' },
+                      ];
+                      
+                      // Add documents based on HS codes
+                      if (formData.packages) {
+                        formData.packages.forEach(pkg => {
+                          if (pkg.products) {
+                            pkg.products.forEach(prod => {
+                              if (prod.hsCode) {
+                                // Add Certificate of Origin for international shipments
+                                if (formData.shipmentType === 'International' && 
+                                    !suggestedDocs.find(d => d.name === 'Certificate of Origin')) {
+                                  suggestedDocs.push({ 
+                                    name: 'Certificate of Origin', 
+                                    required: true,
+                                    description: 'Required for international shipments'
+                                  });
+                                }
+                                
+                                // Add Export License for certain HS codes
+                                if (prod.hsCode.startsWith('85') && 
+                                    !suggestedDocs.find(d => d.name === 'Export License')) {
+                                  suggestedDocs.push({ 
+                                    name: 'Export License', 
+                                    required: false,
+                                    description: 'May be required for electronic goods'
+                                  });
+                                }
+                              }
+                            });
+                          }
+                        });
+                      }
+                      
+                      setRequiredDocuments(suggestedDocs);
+                      setAnalyzingDocuments(false);
+                    }}
+                    className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2 font-medium"
+                  >
+                    <Sparkles className="w-5 h-5" />
+                    Analyze Required Documents
+                  </button>
+                </div>
+              </div>
             </div>
           </CollapsibleSection>
 
@@ -1359,8 +1433,10 @@ export function ShipmentForm({ shipment, onNavigate }) {
                     <span className="text-slate-900 font-semibold">{formData.packages?.length || 0}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-600">Products:</span>
-                    <span className="text-slate-900 font-semibold">{formData.products?.length || 0}</span>
+                    <span className="text-slate-600">Total Products:</span>
+                    <span className="text-slate-900 font-semibold">
+                      {formData.packages?.reduce((sum, pkg) => sum + (pkg.products?.length || 0), 0) || 0}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-600">Total Weight:</span>
@@ -1373,6 +1449,10 @@ export function ShipmentForm({ shipment, onNavigate }) {
                 <h3 className="font-semibold text-slate-900 mb-3">Pricing Summary</h3>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
+                    <span className="text-slate-600">Customs Value:</span>
+                    <span className="text-slate-900">{formData.currency || 'USD'} {formData.customsValue?.toFixed(2) || '0.00'}</span>
+                  </div>
+                  <div className="flex justify-between">
                     <span className="text-slate-600">Base Price:</span>
                     <span className="text-slate-900">${pricing.basePrice.toFixed(2)}</span>
                   </div>
@@ -1384,12 +1464,6 @@ export function ShipmentForm({ shipment, onNavigate }) {
                     <span className="text-slate-600">Clearance:</span>
                     <span className="text-slate-900">${pricing.customsClearance.toFixed(2)}</span>
                   </div>
-                  {formData.insuranceRequired && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-600">Insurance:</span>
-                      <span className="text-slate-900">${pricing.insurance.toFixed(2)}</span>
-                    </div>
-                  )}
                   <div className="flex justify-between py-2 border-t border-slate-200">
                     <span className="text-slate-600">Subtotal:</span>
                     <span className="text-slate-900">${pricing.subtotal.toFixed(2)}</span>
