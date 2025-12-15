@@ -14,11 +14,13 @@ namespace PreClear.Api.Controllers
     public class AiController : ControllerBase
     {
         private readonly IAiService _ai;
+        private readonly IDocumentRepository _docRepo;
         private readonly ILogger<AiController> _logger;
 
-        public AiController(IAiService ai, ILogger<AiController> logger)
+        public AiController(IAiService ai, IDocumentRepository docRepo, ILogger<AiController> logger)
         {
             _ai = ai;
+            _docRepo = docRepo;
             _logger = logger;
         }
 
@@ -77,17 +79,15 @@ namespace PreClear.Api.Controllers
 
         public class DocumentPredictRequest
         {
-            public string ProductName { get; set; } = string.Empty;
-            public string Category { get; set; } = string.Empty;
+            public string ProductCategory { get; set; } = string.Empty;
             public string ProductDescription { get; set; } = string.Empty;
             public string HsCode { get; set; } = string.Empty;
             public string OriginCountry { get; set; } = string.Empty;
             public string DestinationCountry { get; set; } = string.Empty;
-            public string PackageType { get; set; } = string.Empty;
-            public double Weight { get; set; } = 0;
-            public double DeclaredValue { get; set; } = 0;
-            public string ShipmentType { get; set; } = string.Empty;
-            public string ServiceLevel { get; set; } = string.Empty;
+            public string PackageTypeWeight { get; set; } = string.Empty;
+            public string ModeOfTransport { get; set; } = string.Empty;
+            public bool HtsFlag { get; set; } = false;
+            public long ShipmentId { get; set; } = 0;
         }
 
         [HttpPost("documents/predict")]
@@ -100,27 +100,81 @@ namespace PreClear.Api.Controllers
                     return BadRequest(new { error = "request_required" });
                 }
 
-                var aiRequest = new PreClear.Api.Services.AiService.DocumentPredictionRequest
+                var aiRequest = new PreClear.Api.Services.DocumentPredictionRequest
                 {
-                    ProductName = req.ProductName ?? string.Empty,
-                    Category = req.Category ?? string.Empty,
-                    ProductDescription = req.ProductDescription ?? string.Empty,
-                    HsCode = req.HsCode ?? string.Empty,
                     OriginCountry = req.OriginCountry ?? string.Empty,
                     DestinationCountry = req.DestinationCountry ?? string.Empty,
-                    PackageType = req.PackageType ?? string.Empty,
-                    Weight = req.Weight,
-                    DeclaredValue = req.DeclaredValue,
-                    ShipmentType = req.ShipmentType ?? string.Empty,
-                    ServiceLevel = req.ServiceLevel ?? string.Empty,
+                    HsCode = req.HsCode ?? string.Empty,
+                    HtsFlag = req.HtsFlag,
+                    ProductCategory = req.ProductCategory ?? string.Empty,
+                    ProductDescription = req.ProductDescription ?? string.Empty,
+                    PackageTypeWeight = req.PackageTypeWeight ?? string.Empty,
+                    ModeOfTransport = req.ModeOfTransport ?? string.Empty,
+                    ConfidenceThreshold = 0.3f
                 };
 
-                var result = await _ai.SuggestDocumentsAsync(aiRequest);
+                var result = await _ai.PredictRequiredDocumentsAsync(aiRequest);
                 return Ok(result);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error while suggesting required documents");
+                return StatusCode(500, new { error = "internal_error" });
+            }
+        }
+
+        [HttpPost("required-documents")]
+        public async Task<IActionResult> SaveRequiredDocuments([FromBody] DocumentPredictRequest req)
+        {
+            try
+            {
+                if (req == null || req.ShipmentId == 0)
+                {
+                    return BadRequest(new { error = "shipment_id_required" });
+                }
+
+                var aiRequest = new PreClear.Api.Services.DocumentPredictionRequest
+                {
+                    OriginCountry = req.OriginCountry ?? string.Empty,
+                    DestinationCountry = req.DestinationCountry ?? string.Empty,
+                    HsCode = req.HsCode ?? string.Empty,
+                    HtsFlag = req.HtsFlag,
+                    ProductCategory = req.ProductCategory ?? string.Empty,
+                    ProductDescription = req.ProductDescription ?? string.Empty,
+                    PackageTypeWeight = req.PackageTypeWeight ?? string.Empty,
+                    ModeOfTransport = req.ModeOfTransport ?? string.Empty,
+                    ConfidenceThreshold = 0.3f
+                };
+
+                var prediction = await _ai.PredictRequiredDocumentsAsync(aiRequest);
+
+                // Persist each predicted document as required and not uploaded
+                var docsToSave = new List<PreClear.Api.Models.ShipmentDocument>();
+                foreach (var name in prediction.RequiredDocuments ?? Array.Empty<string>())
+                {
+                    var doc = new PreClear.Api.Models.ShipmentDocument
+                    {
+                        ShipmentId = req.ShipmentId,
+                        DocumentType = PreClear.Api.Models.DocumentType.Other,
+                        Name = name,
+                        FileUrl = null,
+                        UploadedBy = null,
+                        VerifiedByBroker = false,
+                        Required = true,
+                        Uploaded = false,
+                        UploadedAt = System.DateTime.UtcNow,
+                        Version = 1
+                    };
+
+                    var saved = await _docRepo.AddAsync(doc);
+                    docsToSave.Add(saved);
+                }
+
+                return Ok(new { saved = docsToSave.Count, documents = docsToSave.Select(d => new { d.Id, d.Name, d.Required, d.Uploaded }) });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while saving required documents");
                 return StatusCode(500, new { error = "internal_error" });
             }
         }

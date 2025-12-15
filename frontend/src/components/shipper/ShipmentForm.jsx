@@ -4,6 +4,7 @@ import {
   AlertTriangle, ChevronDown, Plus, Trash2, FileText, Globe, Settings, Users, Pencil, Sparkles, Upload
 } from 'lucide-react';
 import { shipmentsStore } from '../../store/shipmentsStore';
+import RequiredDocuments from '../RequiredDocuments';
 import { suggestHSCode, validateAndCheckHSCode, getCurrencyByCountry } from '../../utils/validation';
 import { HsSuggestionPanel } from './HsSuggestionPanel';
 
@@ -28,15 +29,6 @@ const reasonsForExport = [
   'Exhibition',
   'Other'
 ];
-
-// Helper to get today's date in YYYY-MM-DD format
-const getTodayDateString = () => {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, '0');
-  const day = String(today.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
 
 // Customs clearance configuration by country/region
 const CLEARANCE_CONFIG = {
@@ -599,29 +591,34 @@ export function ShipmentForm({ shipment, onNavigate }) {
     return () => { mounted = false; };
   }, []);
 
-  // Trigger HS code suggestions when product name/description/category change (iterate packages -> products)
+  // Trigger HS code suggestions when product name/description/category change (use stable pkgIdx-prodIdx keys)
   useEffect(() => {
     if (!formData.packages) return;
 
-    formData.packages.forEach(pkg => {
-      if (!pkg.products) return;
-      pkg.products.forEach(async (product) => {
-        const productKey = product.id || `${pkg.id || 'pkg'}-${Math.random()}`;
-        const triggerText = `${product.name || ''} ${product.description || ''} ${product.category || ''}`.trim();
-        if (!triggerText || triggerText.length < 3) return;
+    (async () => {
+      for (let pkgIdx = 0; pkgIdx < formData.packages.length; pkgIdx++) {
+        const pkg = formData.packages[pkgIdx];
+        if (!pkg.products) continue;
+        for (let prodIdx = 0; prodIdx < pkg.products.length; prodIdx++) {
+          const product = pkg.products[prodIdx];
+          const productKey = `${pkgIdx}-${prodIdx}`;
+          const triggerText = `${product.name || ''} ${product.description || ''} ${product.category || ''}`.trim();
+          if (!triggerText || triggerText.length < 3) continue;
 
-        try {
-          setLoadingHsSuggestions(prev => ({ ...prev, [productKey]: true }));
-          const suggestions = await suggestHSCode(product.name || '', product.description || '', product.category || '');
-          setHsSuggestions(prev => ({ ...prev, [productKey]: suggestions }));
-        } catch (err) {
-          console.error('HS suggestion error', err);
-        } finally {
-          setLoadingHsSuggestions(prev => ({ ...prev, [productKey]: false }));
+          try {
+            setLoadingHsSuggestions(prev => ({ ...prev, [productKey]: true }));
+            const suggestions = await suggestHSCode(product.name || '', product.description || '', product.category || '');
+            setHsSuggestions(prev => ({ ...prev, [productKey]: suggestions }));
+          } catch (err) {
+            console.error('HS suggestion error', err);
+          } finally {
+            setLoadingHsSuggestions(prev => ({ ...prev, [productKey]: false }));
+          }
         }
-      });
-    });
-    // build dependency by concatenating product names/descriptions across packages
+      }
+    })();
+
+    // dependency: serialized product fields
   }, [formData.packages ? formData.packages.map(pkg => (pkg.products || []).map(p => `${p.name}|${p.description}|${p.category}`).join('||')).join('|||') : '']);
 
   // Validate HS codes when changed (iterate packages -> products)
@@ -730,6 +727,15 @@ export function ShipmentForm({ shipment, onNavigate }) {
       return;
     }
 
+    // Ensure all required documents are uploaded before submitting for AI review
+    if (requiredDocuments && requiredDocuments.length > 0) {
+      const missing = requiredDocuments.filter(d => !documentFiles[d.name]);
+      if (missing.length > 0) {
+        alert(`Please upload all required documents before submitting. Missing: ${missing.map(m=>m.name).join(', ')}`);
+        return;
+      }
+    }
+
     // Prepare shipment object to save
     const updatedShipment = {
       ...formData,
@@ -750,7 +756,7 @@ export function ShipmentForm({ shipment, onNavigate }) {
       products: pkg.products || []
     }));
     
-    // Calculate customs value from packages (sum of product totalValue)
+    // Calculate customs value from packages
     let calculatedCustomsValue = 0;
     updatedShipment.packages.forEach(pkg => {
       if (pkg.products && Array.isArray(pkg.products)) {
@@ -760,38 +766,6 @@ export function ShipmentForm({ shipment, onNavigate }) {
       }
     });
     updatedShipment.customsValue = calculatedCustomsValue;
-
-    // Calculate total shipment weight (sum of package weight * quantity if provided)
-    const totalWeight = updatedShipment.packages.reduce((acc, pkg) => {
-      const pkgQty = pkg.quantity || 1;
-      const pkgWeight = parseFloat(pkg.weight || 0);
-      return acc + (pkgWeight * pkgQty);
-    }, 0);
-    updatedShipment.weight = totalWeight || updatedShipment.weight || 0;
-
-    // Set declared value from calculated customs value if not explicitly provided
-    updatedShipment.value = (updatedShipment.value && updatedShipment.value !== '') ? updatedShipment.value : String(calculatedCustomsValue || 0);
-
-    // Ensure currency is set
-    updatedShipment.currency = updatedShipment.currency || profileCurrency || 'USD';
-
-    // Ensure shipmentType and mode have defaults if missing
-    updatedShipment.shipmentType = updatedShipment.shipmentType || 'International';
-    updatedShipment.mode = updatedShipment.mode || 'Air';
-
-    // Save uploaded documents from form to uploadedDocuments
-    if (Object.keys(documentFiles).length > 0) {
-      updatedShipment.uploadedDocuments = updatedShipment.uploadedDocuments || {};
-      Object.entries(documentFiles).forEach(([docName, file]) => {
-        updatedShipment.uploadedDocuments[docName.toLowerCase().replace(/\s+/g, '_')] = {
-          name: docName,
-          fileName: file.name,
-          uploaded: true,
-          uploadedAt: new Date().toISOString(),
-          source: 'form'
-        };
-      });
-    }
 
     // Save to store and navigate to details for AI evaluation
     try {
@@ -980,7 +954,6 @@ export function ShipmentForm({ shipment, onNavigate }) {
                   name="estimatedDropoffDate"
                   value={formData.estimatedDropoffDate || ''}
                   onChange={handleChange}
-                  min={getTodayDateString()}
                 />
               )}
               {formData.pickupType === 'Scheduled Pickup' && (
@@ -998,7 +971,6 @@ export function ShipmentForm({ shipment, onNavigate }) {
                     name="pickupDate"
                     value={formData.pickupDate || ''}
                     onChange={handleChange}
-                    min={getTodayDateString()}
                   />
                   <InputField
                     label="Earliest Pickup Time"
@@ -1406,8 +1378,8 @@ export function ShipmentForm({ shipment, onNavigate }) {
 
                                   {/* HS code suggestions (AI) */}
                                   <HsSuggestionPanel
-                                    suggestions={hsSuggestions[product.id] || []}
-                                    loading={loadingHsSuggestions[product.id] || false}
+                                    suggestions={hsSuggestions[`${pkgIdx}-${prodIdx}`] || []}
+                                    loading={loadingHsSuggestions[`${pkgIdx}-${prodIdx}`] || false}
                                     selectedCode={product.hsCode}
                                     onSelect={(code) => {
                                       const updatedProducts = [...pkg.products];
@@ -1679,29 +1651,61 @@ export function ShipmentForm({ shipment, onNavigate }) {
                   <OvalButton
                     type="button"
                     onClick={async () => {
-                      setAnalyzingDocuments(true);
-                      await new Promise(resolve => setTimeout(resolve, 800));
-                      // basic suggestion logic (kept from prior implementation)
-                      const suggestedDocs = [
-                        { name: 'Commercial Invoice', required: true, description: 'Required for all shipments' },
-                        { name: 'Packing List', required: true, description: 'Required for all shipments' },
-                      ];
-                      if (formData.packages) {
-                        formData.packages.forEach(pkg => {
-                          if (pkg.products) pkg.products.forEach(prod => {
-                            if (prod.hsCode) {
-                              if (formData.shipmentType === 'International' && !suggestedDocs.find(d => d.name === 'Certificate of Origin')) {
-                                suggestedDocs.push({ name: 'Certificate of Origin', required: true, description: 'Required for international shipments' });
-                              }
-                              if (prod.hsCode.startsWith('85') && !suggestedDocs.find(d => d.name === 'Export License')) {
-                                suggestedDocs.push({ name: 'Export License', required: false, description: 'May be required for electronic goods' });
-                              }
-                            }
-                          });
+                      try {
+                        setAnalyzingDocuments(true);
+
+                        // Build request payload matching backend API
+                        const request = {
+                          product_category: formData.productCategory || '',
+                          product_description: formData.productDescription || '',
+                          hs_code: (formData.packages && formData.packages[0] && formData.packages[0].products && formData.packages[0].products[0]) ? (formData.packages[0].products[0].hsCode || '') : (formData.hsCode || ''),
+                          origin_country: formData.originCountry || formData.shipper?.country || '',
+                          destination_country: formData.destinationCountry || formData.consignee?.country || '',
+                          package_type_weight: (formData.packages && formData.packages[0]) ? `${formData.packages[0].packageType || ''} ${formData.packages[0].weight || ''}`.trim() : '',
+                          mode_of_transport: formData.mode || '',
+                          hts_flag: !!formData.htsFlag
+                        };
+
+                        // First call prediction endpoint to get human-readable documents + confidence
+                        const res = await fetch('/api/ai/documents/predict', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(request)
                         });
+
+                        if (!res.ok) throw new Error('Prediction failed');
+                        const pred = await res.json();
+
+                        // Expecting { required_documents: [...], confidence_scores: {...} }
+                        const docs = (pred.required_documents || []).map(name => ({ name, required: true, description: '' , confidence: (pred.confidence_scores && pred.confidence_scores[name]) || 0 }));
+                        setRequiredDocuments(docs);
+
+                        // If shipment exists (saved), persist predictions server-side
+                        if (formData.id) {
+                          const saveReq = {
+                            ProductCategory: request.product_category,
+                            ProductDescription: request.product_description,
+                            HsCode: request.hs_code,
+                            OriginCountry: request.origin_country,
+                            DestinationCountry: request.destination_country,
+                            PackageTypeWeight: request.package_type_weight,
+                            ModeOfTransport: request.mode_of_transport,
+                            HtsFlag: request.hts_flag,
+                            ShipmentId: formData.id
+                          };
+
+                          await fetch('/api/ai/required-documents', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(saveReq)
+                          });
+                        }
+                      } catch (err) {
+                        console.error('Document analysis failed', err);
+                        alert('Failed to analyze documents. Please try again.');
+                      } finally {
+                        setAnalyzingDocuments(false);
                       }
-                      setRequiredDocuments(suggestedDocs);
-                      setAnalyzingDocuments(false);
                     }}
                     className="px-4 py-2 flex items-center gap-2 font-medium text-sm text-white"
                     style={yellowButtonStyle}
@@ -1712,11 +1716,12 @@ export function ShipmentForm({ shipment, onNavigate }) {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 w-full">
+                <div className="flex items-center gap-3 w-full">
                 <OvalButton
                   onClick={handleSubmit}
                   className="flex-1 py-3 font-semibold"
                   style={{ ...yellowButtonStyle, color: '#2F1B17' }}
+                  disabled={requiredDocuments && requiredDocuments.length > 0 && requiredDocuments.some(d => !documentFiles[d.name])}
                 >
                   Submit for AI Review
                 </OvalButton>

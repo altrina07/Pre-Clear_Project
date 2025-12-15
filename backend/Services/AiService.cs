@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using PreClear.Api.Data;
 using PreClear.Api.Interfaces;
 using PreClear.Api.Models;
+using System.Text.Json.Serialization;
 
 namespace PreClear.Api.Services
 {
@@ -67,7 +68,7 @@ namespace PreClear.Api.Services
             public string RegulatoryBasis { get; set; }
         }
 
-        public class DocumentPredictionRequest
+        public class DocumentSuggestRequest
         {
             public string ProductName { get; set; }
             public string Category { get; set; }
@@ -82,7 +83,7 @@ namespace PreClear.Api.Services
             public string ServiceLevel { get; set; }
         }
 
-        public class DocumentPredictionResponse
+        public class DocumentSuggestResponse
         {
             public string ShipmentId { get; set; }
             public List<DocumentRequirement> PredictedDocuments { get; set; }
@@ -92,7 +93,7 @@ namespace PreClear.Api.Services
             public double ConfidenceThreshold { get; set; }
         }
 
-        public async Task<DocumentPredictionResponse> SuggestDocumentsAsync(DocumentPredictionRequest request)
+        public async Task<DocumentSuggestResponse> SuggestDocumentsAsync(DocumentSuggestRequest request)
         {
             if (request == null)
             {
@@ -117,11 +118,11 @@ namespace PreClear.Api.Services
 
             try
             {
-                var resp = await client.PostAsJsonAsync("http://localhost:8002/predict", payload);
+                var resp = await client.PostAsJsonAsync("http://localhost:8002/predict-documents", payload);
                 if (!resp.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Document recommendation service returned {Status}", resp.StatusCode);
-                    return new DocumentPredictionResponse
+                    return new DocumentSuggestResponse
                     {
                         PredictedDocuments = new List<DocumentRequirement>(),
                         Mode = "error",
@@ -131,8 +132,8 @@ namespace PreClear.Api.Services
                     };
                 }
 
-                var result = await resp.Content.ReadFromJsonAsync<DocumentPredictionResponse>();
-                return result ?? new DocumentPredictionResponse
+                var result = await resp.Content.ReadFromJsonAsync<DocumentSuggestResponse>();
+                return result ?? new DocumentSuggestResponse
                 {
                     PredictedDocuments = new List<DocumentRequirement>(),
                     Mode = "ml",
@@ -144,7 +145,7 @@ namespace PreClear.Api.Services
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to call document recommendation service");
-                return new DocumentPredictionResponse
+                return new DocumentSuggestResponse
                 {
                     PredictedDocuments = new List<DocumentRequirement>(),
                     Mode = "error",
@@ -268,6 +269,83 @@ namespace PreClear.Api.Services
                 return new List<HsSuggestion>();
             }
         }
+
+        public async Task<DocumentPredictionResponse> PredictRequiredDocumentsAsync(DocumentPredictionRequest request)
+        {
+            if (request == null)
+            {
+                return new DocumentPredictionResponse { RequiredDocuments = Array.Empty<string>() };
+            }
+
+            try
+            {
+                var client = _httpFactory.CreateClient();
+                var url = "http://localhost:8002/predict-documents";
+                
+                var response = await client.PostAsJsonAsync(url, request);
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Document prediction service returned {Status}", response.StatusCode);
+                    return new DocumentPredictionResponse { RequiredDocuments = Array.Empty<string>() };
+                }
+
+                var body = await response.Content.ReadFromJsonAsync<DocumentPredictionResponse>();
+                if (body?.RequiredDocuments == null)
+                {
+                    return new DocumentPredictionResponse { RequiredDocuments = Array.Empty<string>() };
+                }
+
+                return body;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to call document prediction service");
+                return new DocumentPredictionResponse { RequiredDocuments = Array.Empty<string>() };
+            }
+        }
+    }
+}
+
+namespace PreClear.Api.Services
+{
+    public class DocumentPredictionRequest
+    {
+        [JsonPropertyName("origin_country")]
+        public string OriginCountry { get; set; }
+        
+        [JsonPropertyName("destination_country")]
+        public string DestinationCountry { get; set; }
+        
+        [JsonPropertyName("hs_code")]
+        public string HsCode { get; set; }
+        
+        [JsonPropertyName("hts_flag")]
+        public bool HtsFlag { get; set; }
+        
+        [JsonPropertyName("product_category")]
+        public string ProductCategory { get; set; }
+        
+        [JsonPropertyName("product_description")]
+        public string ProductDescription { get; set; }
+        
+        [JsonPropertyName("package_type_weight")]
+        public string PackageTypeWeight { get; set; }
+        
+        [JsonPropertyName("mode_of_transport")]
+        public string ModeOfTransport { get; set; }
+        
+        [JsonPropertyName("confidence_threshold")]
+        public float ConfidenceThreshold { get; set; } = 0.3f;
+    }
+
+    public class DocumentPredictionResponse
+    {
+        [JsonPropertyName("required_documents")]
+        public string[] RequiredDocuments { get; set; }
+        
+        [JsonPropertyName("confidence_scores")]
+        public Dictionary<string, float> ConfidenceScores { get; set; }
     }
 }
 

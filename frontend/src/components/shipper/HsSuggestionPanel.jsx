@@ -49,11 +49,7 @@ export function HsSuggestionPanel({
                   <p className="text-sm mt-1 break-words">
                     {s.description || 'No description'}
                   </p>
-                  {s.score && (
-                    <p className="text-xs mt-2 opacity-75">
-                      Match: {(s.score * 100).toFixed(0)}%
-                    </p>
-                  )}
+                     {/* Match score display removed per user request */}
                 </div>
                 {selectedCode === (s.code || s.hscode) && (
                   <Check className="w-5 h-5 flex-shrink-0 mt-1" style={{ color: '#2F1B17' }} />
