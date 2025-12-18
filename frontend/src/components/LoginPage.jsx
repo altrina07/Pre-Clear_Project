@@ -16,20 +16,29 @@ export function LoginPage({ onLogin, onNavigate }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!selectedRole) {
-      alert('Please select a role');
-      return;
-    }
+    // Role selection is optional; backend-provided role will be used.
 
     try {
+      console.group('🔐 Login Process');
+      console.log('Email:', email);
+      console.log('Role:', selectedRole);
+      
       const resp = await signIn({ email, password });
-      // store token
-      if (resp?.token) {
-        localStorage.setItem('pc_token', resp.token);
+      console.log('✅ Sign-in response:', resp);
+      
+      // Token storage is centralized in the auth API via shared client.
+      if (!resp?.token) {
+        console.warn('⚠️  No token in response!');
       }
-      const role = resp?.role || selectedRole;
+      
+      const role = resp?.role || selectedRole || '';
+      console.log('✅ Login successful, navigating with role:', role);
+      console.groupEnd();
+      
       onLogin(role);
     } catch (err) {
+      console.groupEnd();
+      console.error('❌ Login error:', err);
       const msg = err?.response?.data?.error || err?.message || 'signin_failed';
       alert('Sign in failed: ' + msg);
     }

@@ -1,21 +1,61 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 using PreClear.Api.Data;
 using PreClear.Api.Swagger;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // Make enum parsing case-insensitive and use string converter
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+        // Don't preserve references - use ReferenceHandler.IgnoreCycles instead to handle circular refs gracefully
+        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.WriteIndented = true;
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
     {
         Title = "PreClear API",
-        Version = "v1"
+        Version = "v1",
+        Description = "AI-powered customs compliance platform with JWT authentication"
     });
 
     c.OperationFilter<FileUploadOperationFilter>(); // ✅ IMPORTANT
+
+    // Add JWT Bearer authentication to Swagger
+    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "JWT Authorization header using the Bearer scheme.\n\n" +
+                      "Enter 'Bearer' [space] and then your token in the text input below.\n\n" +
+                      "Example: \"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\""
+    });
+
+    // Add security requirement to all endpoints
+    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            new string[] { }
+        }
+    });
 });
 
 
@@ -28,9 +68,12 @@ builder.Services.AddScoped<PreClear.Api.Interfaces.IShipmentRepository, PreClear
 builder.Services.AddScoped<PreClear.Api.Interfaces.IShipmentService, PreClear.Api.Services.ShipmentService>();
 builder.Services.AddScoped<PreClear.Api.Interfaces.IDocumentRepository, PreClear.Api.Repositories.DocumentRepository>();
 builder.Services.AddScoped<PreClear.Api.Interfaces.IDocumentService, PreClear.Api.Services.DocumentService>();
+builder.Services.AddScoped<PreClear.Api.Services.BrokerAssignmentService>(); // Add BrokerAssignmentService
+builder.Services.AddHttpContextAccessor(); // Add IHttpContextAccessor for JWT claims extraction
 
 // Connection
 var conn = builder.Configuration.GetConnectionString("DefaultConnection");
+
 if (string.IsNullOrWhiteSpace(conn))
     throw new InvalidOperationException("Please set DefaultConnection in appsettings.json");
 
@@ -56,34 +99,120 @@ if (!string.IsNullOrWhiteSpace(effectiveConn))
 }
 
 // CORS (dev)
-builder.Services.AddCors(p => p.AddDefaultPolicy(q => q.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
+builder.Services.AddCors(p => p.AddDefaultPolicy(q => 
+    q.WithOrigins("http://localhost:3000") // specify your frontend URL
+     .AllowAnyHeader()
+     .AllowAnyMethod()
+     .AllowCredentials() // required for cookies/auth
+));
 
 // HttpClient factory for AI service outgoing calls
 builder.Services.AddHttpClient();
 
+// JWT Authentication
+builder.Services.AddAuthentication("Bearer").AddJwtBearer(options =>
+{
+    var jwtSecret = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key is not configured");
+    var key = System.Text.Encoding.ASCII.GetBytes(jwtSecret);
+    
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(key),
+        ValidateIssuer = false,  // Disabled for debugging
+        ValidateAudience = false,  // Disabled for debugging
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
+    };
+});
+
+builder.Services.AddAuthorization();
+
 var app = builder.Build();
 
 // Apply migrations automatically in Development only
-using (var scope = app.Services.CreateScope())
+try
 {
-    var env = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
-    if (env.IsDevelopment())
+    using (var scope = app.Services.CreateScope())
     {
-        var db = scope.ServiceProvider.GetRequiredService<PreclearDbContext>();
-        db.Database.Migrate();
-        PreClear.Api.Services.DbSeeder.Seed(db);
-
+        var env = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
+        if (env.IsDevelopment())
+        {
+            try
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PreclearDbContext>();
+                // Skipping automatic migrations since we're using custom rebuild_database.sql
+                // db.Database.Migrate();
+                PreClear.Api.Services.DbSeeder.Seed(db);
+                Console.WriteLine("Database seeding completed successfully");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error during database seeding: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                // Continue running even if seeding fails
+            }
+        }
     }
 }
+catch (Exception ex)
+{
+    Console.WriteLine($"Critical error during application startup: {ex.Message}");
+    Console.WriteLine($"Stack trace: {ex.StackTrace}");
+    // Don't rethrow - continue running
+}
+
+// Enable Swagger UI for all environments (local development and testing)
+// In production, you may want to disable this or add authentication
+app.UseSwagger(c =>
+{
+    c.RouteTemplate = "swagger/{documentName}/swagger.json";
+});
+
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "PreClear API v1");
+    c.RoutePrefix = "swagger"; // Swagger available at /swagger
+    c.DefaultModelsExpandDepth(2);
+    c.DefaultModelExpandDepth(2);
+    c.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.List);
+    c.EnableValidator();
+});
 
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
     app.UseDeveloperExceptionPage();
 }
 
-app.UseHttpsRedirection();
+var enableHttps = builder.Configuration.GetValue<bool>("EnableHttpsRedirection", false);
+if (enableHttps)
+{
+    app.UseHttpsRedirection();
+}
+
 app.UseCors();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
-app.Run();
+
+Console.WriteLine($"=== Pre-Clear Backend Ready to Run ===");
+Console.WriteLine($"Environment: {app.Environment.EnvironmentName}");
+Console.WriteLine($"Listening on: http://localhost:5000");
+Console.WriteLine($"Press Ctrl+C to stop");
+Console.WriteLine($"====================================");
+
+try
+{
+    app.Run();
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"");
+    Console.WriteLine($"FATAL EXCEPTION IN APP.RUN():");
+    Console.WriteLine($"Message: {ex.Message}");
+    Console.WriteLine($"Type: {ex.GetType().Name}");
+    Console.WriteLine($"Stack: {ex.StackTrace}");
+    Console.WriteLine($"Inner: {ex.InnerException?.Message}");
+    Environment.Exit(1);
+}
+

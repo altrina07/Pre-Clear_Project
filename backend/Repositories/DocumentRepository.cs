@@ -35,5 +35,17 @@ namespace PreClear.Api.Repositories
             _db.ShipmentDocuments.Update(doc);
             await _db.SaveChangesAsync();
         }
+
+        public async Task<bool> MarkAsUploadedAsync(long shipmentId, string documentName)
+        {
+            var doc = await _db.ShipmentDocuments
+                .FirstOrDefaultAsync(d => d.ShipmentId == shipmentId && d.FileName == documentName);
+            
+            if (doc == null) return false;
+            
+            doc.UploadedAt = System.DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+            return true;
+        }
     }
 }

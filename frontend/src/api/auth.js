@@ -1,11 +1,27 @@
-import axios from 'axios';
-
-const api = axios.create({ baseURL: '/api', withCredentials: false });
+import http, { setAuthToken, clearAuthToken } from './http';
 
 export async function signUp(payload) {
-  return api.post('/auth/signup', payload).then(r => r.data);
+  const resp = await http.post('/auth/signup', payload);
+  return resp.data;
 }
 
 export async function signIn(payload) {
-  return api.post('/auth/signin', payload).then(r => r.data);
+  const resp = await http.post('/auth/signin', payload);
+  const data = resp.data;
+  // Store JWT token centrally for later requests
+  if (data?.token) {
+    setAuthToken(data.token);
+  }
+  // Optionally keep userId for legacy code paths
+  try {
+    if (data?.id != null) {
+      localStorage.setItem('pc_userId', String(data.id));
+    }
+  } catch { /* ignore */ }
+  return data;
+}
+
+export function signOut() {
+  try { localStorage.removeItem('pc_userId'); } catch { /* ignore */ }
+  clearAuthToken();
 }

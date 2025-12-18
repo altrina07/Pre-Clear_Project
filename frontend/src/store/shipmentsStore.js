@@ -536,14 +536,25 @@ export const createDefaultShipment = () => ({
   shipperId: '',
   shipperName: ''
 });
-// In-memory store (simulates a real-time database)
+// In-memory store - syncs with backend database
 class ShipmentsStore {
   constructor() {
-    this.shipments = [...mockShipments];
-    this.messages = [...mockMessages];
-    this.notifications = [...mockNotifications];
-    this.importExportRules = [...mockImportExportRules];
+    // Start with empty arrays - data will be loaded from backend
+    this.shipments = [];
+    this.messages = [];
+    this.notifications = [];
+    this.importExportRules = [];
     this.listeners = new Set();
+    
+    console.log('🏪 ShipmentsStore initialized (empty - will load from backend)');
+  }
+  
+  // Clear all shipment-related state (used on logout / account switch)
+  clearShipments() {
+    this.shipments = [];
+    this.messages = [];
+    this.notifications = [];
+    this.notify();
   }
 
   // Subscribe to changes

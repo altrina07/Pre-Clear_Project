@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -12,6 +15,7 @@ namespace PreClear.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize] // SECURITY: Require authentication for all document operations
     public class DocumentsController : ControllerBase
     {
         private readonly IDocumentService _service;
@@ -23,18 +27,29 @@ namespace PreClear.Api.Controllers
             _logger = logger;
         }
 
+        private long GetUserId()
+        {
+            var claim = User.FindFirst(ClaimTypes.NameIdentifier);
+            return long.TryParse(claim?.Value, out var id) ? id : 0;
+        }
+
         [HttpPost("shipments/{shipmentId}/upload")]
         [RequestSizeLimit(50_000_000)]
-        public async Task<IActionResult> Upload(long shipmentId, [FromForm] Models.FileUploadRequest request, [FromForm] DocumentType docType = DocumentType.Other, [FromForm] long? uploadedBy = null)
+        public async Task<IActionResult> Upload(long shipmentId, [FromForm] Models.FileUploadRequest request, [FromForm] string docType = "Other")
         {
             var file = request?.File;
             if (file == null) return BadRequest(new { error = "file_required" });
 
             try
             {
+                // SECURITY: Extract uploadedBy from JWT claims, not client input
+                var uploadedBy = GetUserId();
+                if (uploadedBy == 0)
+                    return Unauthorized(new { error = "invalid_token" });
+
                 using var stream = file.OpenReadStream();
                 var created = await _service.UploadAsync(shipmentId, uploadedBy, file.FileName, stream, docType);
-                return Created(created.FileUrl ?? $"/api/documents/{created.Id}/download", created);
+                return Created(created.FilePath ?? $"/api/documents/{created.Id}/download", created);
             }
             catch (ArgumentException aex)
             {
@@ -49,16 +64,49 @@ namespace PreClear.Api.Controllers
         }
 
         [HttpGet("shipments/{shipmentId}/documents")]
-        public async Task<IActionResult> ListByShipment(long shipmentId)
+        public async Task<IActionResult> ListByShipment(string shipmentId)
         {
+            // Try to parse as long ID, otherwise return empty list for string IDs
+            if (!long.TryParse(shipmentId, out long numericId))
+            {
+                // String ID (like SHP-xxx) - return empty list as shipment not yet in DB
+                return Ok(new List<ShipmentDocument>());
+            }
+
             try
             {
-                var list = await _service.GetByShipmentIdAsync(shipmentId);
+                var list = await _service.GetByShipmentIdAsync(numericId);
                 return Ok(list);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error listing documents for shipment {ShipmentId}", shipmentId);
+                return StatusCode(500, new { error = "internal_error" });
+            }
+        }
+
+        [HttpPost("shipments/{shipmentId}/mark-uploaded")]
+        public async Task<IActionResult> MarkAsUploaded(string shipmentId, [FromBody] MarkUploadedRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request?.DocumentName))
+                return BadRequest(new { error = "document_name_required" });
+
+            // Try to parse as long ID, otherwise return success for string IDs (not yet in DB)
+            if (!long.TryParse(shipmentId, out long numericId))
+            {
+                // String ID (like SHP-xxx) - return success as document tracking happens in frontend
+                return Ok(new { success = true });
+            }
+
+            try
+            {
+                var success = await _service.MarkAsUploadedAsync(numericId, request.DocumentName);
+                if (!success) return NotFound(new { error = "document_not_found" });
+                return Ok(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error marking document as uploaded");
                 return StatusCode(500, new { error = "internal_error" });
             }
         }

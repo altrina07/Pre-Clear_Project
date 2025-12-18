@@ -13,10 +13,9 @@ namespace PreClear.Api.Repositories
 
         public async Task SaveFindingAsync(AiFinding finding)
         {
-            if (finding == null) return;
-            finding.CreatedAt = System.DateTime.UtcNow;
-            _db.AiFindings.Add(finding);
-            await _db.SaveChangesAsync();
+            // AiFindings are no longer part of the new schema
+            // Compliance information is stored in ShipmentCompliance instead
+            await Task.CompletedTask;
         }
     }
 }

@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using PreClear.Api.Interfaces;
+using PreClear.Api.Services;
+using PreClear.Api.Models;
 
 namespace PreClear.Api.Controllers
 {
@@ -14,14 +16,77 @@ namespace PreClear.Api.Controllers
     public class AiController : ControllerBase
     {
         private readonly IAiService _ai;
-        private readonly IDocumentRepository _docRepo;
         private readonly ILogger<AiController> _logger;
+        private readonly IShipmentService _shipmentService;
 
-        public AiController(IAiService ai, IDocumentRepository docRepo, ILogger<AiController> logger)
+        public AiController(IAiService ai, ILogger<AiController> logger, IShipmentService shipmentService)
         {
             _ai = ai;
-            _docRepo = docRepo;
             _logger = logger;
+            _shipmentService = shipmentService;
+        }
+
+        public class RequiredDocumentsRequest
+        {
+            public string OriginCountry { get; set; } = string.Empty;
+            public string DestinationCountry { get; set; } = string.Empty;
+            public string HsCode { get; set; } = string.Empty;
+            public bool? HtsFlag { get; set; } = null;
+            public string ProductCategory { get; set; } = string.Empty;
+            public string ProductDescription { get; set; } = string.Empty;
+            public string PackageTypeWeight { get; set; } = string.Empty;
+            public string ModeOfTransport { get; set; } = string.Empty;
+            public int PythonPort { get; set; } = 8002;
+            public long ShipmentId { get; set; } = 0;
+        }
+
+        [HttpPost("required-documents")]
+        public async Task<IActionResult> GetRequiredDocuments([FromBody] RequiredDocumentsRequest req)
+        {
+            try
+            {
+                var result = await _ai.PredictRequiredDocumentsAsync(
+                    req?.OriginCountry ?? string.Empty,
+                    req?.DestinationCountry ?? string.Empty,
+                    req?.HsCode ?? string.Empty,
+                    req?.HtsFlag,
+                    req?.ProductCategory ?? string.Empty,
+                    req?.ProductDescription ?? string.Empty,
+                    req?.PackageTypeWeight ?? string.Empty,
+                    req?.ModeOfTransport ?? string.Empty,
+                    req?.PythonPort ?? 8002,
+                    timeoutSeconds: 10
+                );
+
+                var documents = result.Suggestions ?? Array.Empty<string>();
+
+                if (req?.ShipmentId > 0)
+                {
+                    await _shipmentService.PersistAiPredictedDocumentsAsync(req.ShipmentId, documents);
+                }
+
+                return Ok(new { requiredDocuments = documents });
+            }
+            catch (TimeoutException tex)
+            {
+                _logger.LogWarning(tex, "Documents prediction timed out");
+                return StatusCode(504, new { error = "gateway_timeout", detail = "Python AI timed out" });
+            }
+            catch (System.Net.Http.HttpRequestException httpEx)
+            {
+                _logger.LogWarning(httpEx, "Documents service HTTP error");
+                return StatusCode(502, new { error = "bad_gateway", detail = httpEx.Message });
+            }
+            catch (InvalidOperationException ioex)
+            {
+                _logger.LogWarning(ioex, "Documents prediction invalid response");
+                return BadRequest(new { error = "invalid_response", detail = ioex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in required-documents endpoint");
+                return StatusCode(500, new { error = "internal_error", detail = "Unexpected error fetching required documents" });
+            }
         }
 
         public class AnalyzeRequest
@@ -66,28 +131,40 @@ namespace PreClear.Api.Controllers
             try
             {
                 var suggestions = await _ai.SuggestHsAsync(req?.Name ?? string.Empty, req?.Category ?? string.Empty, req?.Description ?? string.Empty, req?.K ?? 5);
-                // Map to response
-                var result = suggestions.Select(s => new { hscode = s.HsCode, description = s.Description, score = s.Score }).ToList();
-                return Ok(new { suggestions = result });
+                
+                // Map to clean DTO to ensure no reference metadata ($id, $values, etc.) in response
+                var safeSuggestions = suggestions ?? new List<AiService.HsSuggestion>();
+                var result = safeSuggestions.Select(s => new HsSuggestionDto
+                {
+                    hscode = s?.HsCode ?? "",
+                    description = s?.Description ?? "",
+                    score = s?.Score ?? 0f
+                }).ToList();
+                
+                var response = new HsSuggestionsResponse { suggestions = result };
+                _logger.LogInformation("SuggestHs: Returned {Count} suggestions", result.Count);
+                return Ok(response);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error while suggesting HS codes");
-                return StatusCode(500, new { error = "internal_error" });
+                return Ok(new HsSuggestionsResponse { suggestions = new List<HsSuggestionDto>() });
             }
         }
 
         public class DocumentPredictRequest
         {
-            public string ProductCategory { get; set; } = string.Empty;
+            public string ProductName { get; set; } = string.Empty;
+            public string Category { get; set; } = string.Empty;
             public string ProductDescription { get; set; } = string.Empty;
             public string HsCode { get; set; } = string.Empty;
             public string OriginCountry { get; set; } = string.Empty;
             public string DestinationCountry { get; set; } = string.Empty;
-            public string PackageTypeWeight { get; set; } = string.Empty;
-            public string ModeOfTransport { get; set; } = string.Empty;
-            public bool HtsFlag { get; set; } = false;
-            public long ShipmentId { get; set; } = 0;
+            public string PackageType { get; set; } = string.Empty;
+            public double Weight { get; set; } = 0;
+            public double DeclaredValue { get; set; } = 0;
+            public string ShipmentType { get; set; } = string.Empty;
+            public string ServiceLevel { get; set; } = string.Empty;
         }
 
         [HttpPost("documents/predict")]
@@ -100,81 +177,27 @@ namespace PreClear.Api.Controllers
                     return BadRequest(new { error = "request_required" });
                 }
 
-                var aiRequest = new PreClear.Api.Services.DocumentPredictionRequest
+                var aiRequest = new PreClear.Api.Services.AiService.DocumentPredictionRequest
                 {
+                    ProductName = req.ProductName ?? string.Empty,
+                    Category = req.Category ?? string.Empty,
+                    ProductDescription = req.ProductDescription ?? string.Empty,
+                    HsCode = req.HsCode ?? string.Empty,
                     OriginCountry = req.OriginCountry ?? string.Empty,
                     DestinationCountry = req.DestinationCountry ?? string.Empty,
-                    HsCode = req.HsCode ?? string.Empty,
-                    HtsFlag = req.HtsFlag,
-                    ProductCategory = req.ProductCategory ?? string.Empty,
-                    ProductDescription = req.ProductDescription ?? string.Empty,
-                    PackageTypeWeight = req.PackageTypeWeight ?? string.Empty,
-                    ModeOfTransport = req.ModeOfTransport ?? string.Empty,
-                    ConfidenceThreshold = 0.3f
+                    PackageType = req.PackageType ?? string.Empty,
+                    Weight = req.Weight,
+                    DeclaredValue = req.DeclaredValue,
+                    ShipmentType = req.ShipmentType ?? string.Empty,
+                    ServiceLevel = req.ServiceLevel ?? string.Empty,
                 };
 
-                var result = await _ai.PredictRequiredDocumentsAsync(aiRequest);
+                var result = await _ai.SuggestDocumentsAsync(aiRequest);
                 return Ok(result);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error while suggesting required documents");
-                return StatusCode(500, new { error = "internal_error" });
-            }
-        }
-
-        [HttpPost("required-documents")]
-        public async Task<IActionResult> SaveRequiredDocuments([FromBody] DocumentPredictRequest req)
-        {
-            try
-            {
-                if (req == null || req.ShipmentId == 0)
-                {
-                    return BadRequest(new { error = "shipment_id_required" });
-                }
-
-                var aiRequest = new PreClear.Api.Services.DocumentPredictionRequest
-                {
-                    OriginCountry = req.OriginCountry ?? string.Empty,
-                    DestinationCountry = req.DestinationCountry ?? string.Empty,
-                    HsCode = req.HsCode ?? string.Empty,
-                    HtsFlag = req.HtsFlag,
-                    ProductCategory = req.ProductCategory ?? string.Empty,
-                    ProductDescription = req.ProductDescription ?? string.Empty,
-                    PackageTypeWeight = req.PackageTypeWeight ?? string.Empty,
-                    ModeOfTransport = req.ModeOfTransport ?? string.Empty,
-                    ConfidenceThreshold = 0.3f
-                };
-
-                var prediction = await _ai.PredictRequiredDocumentsAsync(aiRequest);
-
-                // Persist each predicted document as required and not uploaded
-                var docsToSave = new List<PreClear.Api.Models.ShipmentDocument>();
-                foreach (var name in prediction.RequiredDocuments ?? Array.Empty<string>())
-                {
-                    var doc = new PreClear.Api.Models.ShipmentDocument
-                    {
-                        ShipmentId = req.ShipmentId,
-                        DocumentType = PreClear.Api.Models.DocumentType.Other,
-                        Name = name,
-                        FileUrl = null,
-                        UploadedBy = null,
-                        VerifiedByBroker = false,
-                        Required = true,
-                        Uploaded = false,
-                        UploadedAt = System.DateTime.UtcNow,
-                        Version = 1
-                    };
-
-                    var saved = await _docRepo.AddAsync(doc);
-                    docsToSave.Add(saved);
-                }
-
-                return Ok(new { saved = docsToSave.Count, documents = docsToSave.Select(d => new { d.Id, d.Name, d.Required, d.Uploaded }) });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error while saving required documents");
                 return StatusCode(500, new { error = "internal_error" });
             }
         }

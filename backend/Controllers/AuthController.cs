@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using PreClear.Api.Interfaces;
@@ -44,9 +45,18 @@ namespace PreClear.Api.Controllers
         [HttpPost("signin")]
         public async Task<IActionResult> SignIn([FromBody] SignInRequest req)
         {
-            var (success, token, error, userId, role) = await _auth.SignInAsync(req.Email, req.Password);
-            if (!success) return Unauthorized(new { error });
-            return Ok(new { token, id = userId, role });
+            try
+            {
+                if (req == null || string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
+                    return BadRequest(new { error = "email_and_password_required" });
+                var (success, token, error, userId, role) = await _auth.SignInAsync(req.Email, req.Password);
+                if (!success) return Unauthorized(new { error });
+                return Ok(new { token, id = userId, role });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message, detail = ex.StackTrace });
+            }
         }
     }
 

@@ -4,9 +4,10 @@ import {
   AlertTriangle, ChevronDown, Plus, Trash2, FileText, Globe, Settings, Users, Pencil, Sparkles, Upload
 } from 'lucide-react';
 import { shipmentsStore } from '../../store/shipmentsStore';
-import RequiredDocuments from '../RequiredDocuments';
 import { suggestHSCode, validateAndCheckHSCode, getCurrencyByCountry } from '../../utils/validation';
+import { getAuthToken } from '../../utils/api';
 import { HsSuggestionPanel } from './HsSuggestionPanel';
+import { createShipment, updateShipment } from '../../api/shipments';
 
 const modes = ['Air', 'Sea', 'Road', 'Rail', 'Courier', 'Multimodal'];
 const shipmentTypes = ['Domestic', 'International'];
@@ -313,6 +314,7 @@ export function ShipmentForm({ shipment, onNavigate }) {
   const [requiredDocuments, setRequiredDocuments] = useState([]);
   const [documentFiles, setDocumentFiles] = useState({});
   const [analyzingDocuments, setAnalyzingDocuments] = useState(false);
+  const [documentValidationError, setDocumentValidationError] = useState('');
   const [errors, setErrors] = useState({});
   const [pricing, setPricing] = useState({
     basePrice: 0,
@@ -441,6 +443,78 @@ export function ShipmentForm({ shipment, onNavigate }) {
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [shipment, shipperEditable]);
+
+  // Auto-fetch AI required documents when entering step 6
+  useEffect(() => {
+    if (currentStep !== 6) return;
+    if (analyzingDocuments) return;
+
+    const fetchAiDocuments = async () => {
+      setAnalyzingDocuments(true);
+      
+      try {
+        // Gather shipment context for AI
+        const firstProduct = formData.packages?.[0]?.products?.[0] || {};
+        const payload = {
+          originCountry: formData.shipper?.country || '',
+          destinationCountry: formData.consignee?.country || '',
+          hsCode: firstProduct.hsCode || '',
+          htsFlag: !!firstProduct.hsCode,
+          productCategory: firstProduct.category || '',
+          productDescription: firstProduct.description || '',
+          packageTypeWeight: formData.packages?.[0]?.type ? `${formData.packages[0].type} ${formData.packages[0].weight || ''}${formData.packages[0].weightUnit || ''}` : '',
+          modeOfTransport: formData.mode || '',
+          pythonPort: 9000
+        };
+
+        const response = await fetch('/api/ai/required-documents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          throw new Error(`AI service error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const aiDocs = (data.requiredDocuments || []).map(name => ({
+          name,
+          required: true,
+          description: '',
+          uploaded: false
+        }));
+
+        // If we have a shipmentId, fetch existing documents to get upload status
+        if (formData.id) {
+          try {
+            const docsResponse = await fetch(`/api/documents/shipments/${formData.id}/documents`);
+            if (docsResponse.ok) {
+              const existingDocs = await docsResponse.json();
+              // Update upload status based on existing documents
+              aiDocs.forEach(doc => {
+                const existing = existingDocs.find(d => d.name === doc.name);
+                if (existing && existing.uploaded) {
+                  doc.uploaded = true;
+                }
+              });
+            }
+          } catch (err) {
+            console.error('Failed to fetch existing documents:', err);
+          }
+        }
+
+        setRequiredDocuments(aiDocs);
+      } catch (err) {
+        console.error('Failed to fetch AI documents:', err);
+        setRequiredDocuments([]);
+      } finally {
+        setAnalyzingDocuments(false);
+      }
+    };
+
+    fetchAiDocuments();
+  }, [currentStep, formData.packages, formData.shipper?.country, formData.consignee?.country, formData.mode]);
 
   const toggleSection = (section) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
@@ -591,34 +665,29 @@ export function ShipmentForm({ shipment, onNavigate }) {
     return () => { mounted = false; };
   }, []);
 
-  // Trigger HS code suggestions when product name/description/category change (use stable pkgIdx-prodIdx keys)
+  // Trigger HS code suggestions when product name/description/category change (iterate packages -> products)
   useEffect(() => {
     if (!formData.packages) return;
 
-    (async () => {
-      for (let pkgIdx = 0; pkgIdx < formData.packages.length; pkgIdx++) {
-        const pkg = formData.packages[pkgIdx];
-        if (!pkg.products) continue;
-        for (let prodIdx = 0; prodIdx < pkg.products.length; prodIdx++) {
-          const product = pkg.products[prodIdx];
-          const productKey = `${pkgIdx}-${prodIdx}`;
-          const triggerText = `${product.name || ''} ${product.description || ''} ${product.category || ''}`.trim();
-          if (!triggerText || triggerText.length < 3) continue;
+    formData.packages.forEach(pkg => {
+      if (!pkg.products) return;
+      pkg.products.forEach(async (product) => {
+        const productKey = product.id || `${pkg.id || 'pkg'}-${Math.random()}`;
+        const triggerText = `${product.name || ''} ${product.description || ''} ${product.category || ''}`.trim();
+        if (!triggerText || triggerText.length < 3) return;
 
-          try {
-            setLoadingHsSuggestions(prev => ({ ...prev, [productKey]: true }));
-            const suggestions = await suggestHSCode(product.name || '', product.description || '', product.category || '');
-            setHsSuggestions(prev => ({ ...prev, [productKey]: suggestions }));
-          } catch (err) {
-            console.error('HS suggestion error', err);
-          } finally {
-            setLoadingHsSuggestions(prev => ({ ...prev, [productKey]: false }));
-          }
+        try {
+          setLoadingHsSuggestions(prev => ({ ...prev, [productKey]: true }));
+          const suggestions = await suggestHSCode(product.name || '', product.description || '', product.category || '');
+          setHsSuggestions(prev => ({ ...prev, [productKey]: suggestions }));
+        } catch (err) {
+          console.error('HS suggestion error', err);
+        } finally {
+          setLoadingHsSuggestions(prev => ({ ...prev, [productKey]: false }));
         }
-      }
-    })();
-
-    // dependency: serialized product fields
+      });
+    });
+    // build dependency by concatenating product names/descriptions across packages
   }, [formData.packages ? formData.packages.map(pkg => (pkg.products || []).map(p => `${p.name}|${p.description}|${p.category}`).join('||')).join('|||') : '']);
 
   // Validate HS codes when changed (iterate packages -> products)
@@ -721,60 +790,197 @@ export function ShipmentForm({ shipment, onNavigate }) {
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    // Clear previous validation errors
+    setDocumentValidationError('');
+
     if (!validateForm()) {
       alert('Please fill in all required fields');
       return;
     }
 
-    // Ensure all required documents are uploaded before submitting for AI review
-    if (requiredDocuments && requiredDocuments.length > 0) {
-      const missing = requiredDocuments.filter(d => !documentFiles[d.name]);
-      if (missing.length > 0) {
-        alert(`Please upload all required documents before submitting. Missing: ${missing.map(m=>m.name).join(', ')}`);
+    // STRICT VALIDATION: Check all required documents are uploaded
+    const requiredDocs = requiredDocuments.filter(doc => doc.required);
+    const notUploaded = requiredDocs.filter(doc => !doc.uploaded);
+    
+    if (notUploaded.length > 0) {
+      setDocumentValidationError(`Cannot submit: ${notUploaded.length} required document(s) not uploaded: ${notUploaded.map(d => d.name).join(', ')}`);
+      return;
+    }
+
+    // RE-CHECK upload status from backend if shipment has numeric ID (exists in DB)
+    // Skip verification for string IDs (frontend-only shipments not yet saved to DB)
+    if (formData.id && /^\d+$/.test(formData.id)) {
+      try {
+        const response = await fetch(`/api/documents/shipments/${formData.id}/documents`);
+        if (response.ok) {
+          const backendDocs = await response.json();
+          const mismatch = requiredDocs.find(doc => {
+            const backendDoc = backendDocs.find(bd => bd.name === doc.name);
+            return !backendDoc || !backendDoc.uploaded;
+          });
+          
+          if (mismatch) {
+            setDocumentValidationError(`Upload status mismatch detected. Please refresh and verify all documents are uploaded.`);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to verify document status:', err);
+        setDocumentValidationError('Failed to verify document upload status. Please try again.');
         return;
       }
     }
 
-    // Prepare shipment object to save
-    const updatedShipment = {
-      ...formData,
-      id: formData.id || `SHP-${Date.now()}`,
-      referenceId: formData.referenceId || `REF-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000) + 1000}`,
-      status: 'ai-review',
-      updatedAt: new Date().toISOString(),
-      createdAt: formData.createdAt || new Date().toISOString(),
-    };
-
-    // Ensure arrays exist
-    updatedShipment.packages = updatedShipment.packages || [];
-    updatedShipment.documents = updatedShipment.documents || {};
-    
-    // Ensure each package has products array
-    updatedShipment.packages = updatedShipment.packages.map(pkg => ({
-      ...pkg,
-      products: pkg.products || []
-    }));
-    
     // Calculate customs value from packages
     let calculatedCustomsValue = 0;
-    updatedShipment.packages.forEach(pkg => {
-      if (pkg.products && Array.isArray(pkg.products)) {
-        pkg.products.forEach(prod => {
-          calculatedCustomsValue += parseFloat(prod.totalValue) || 0;
-        });
-      }
-    });
-    updatedShipment.customsValue = calculatedCustomsValue;
+    if (formData.packages && Array.isArray(formData.packages)) {
+      formData.packages.forEach(pkg => {
+        if (pkg.products && Array.isArray(pkg.products)) {
+          pkg.products.forEach(prod => {
+            calculatedCustomsValue += parseFloat(prod.totalValue) || 0;
+          });
+        }
+      });
+    }
 
-    // Save to store and navigate to details for AI evaluation
+    // Map frontend mode values to backend enum (Air, Sea, Ground)
+    const mapMode = (mode) => {
+      const modeMap = {
+        'Air': 'Air',
+        'Sea': 'Sea',
+        'Road': 'Ground',
+        'Rail': 'Ground',
+        'Courier': 'Air',
+        'Multimodal': 'Ground'
+      };
+      return modeMap[mode] || 'Air';
+    };
+
+    // Prepare shipment payload for backend (matching UpsertShipmentDto structure with PascalCase)
+    // Note: Carrier, InsuranceRequired, Incoterm removed per backend schema cleanup
+    const shipmentPayload = {
+      ShipmentName: formData.title || formData.shipmentName || '',
+      Mode: mapMode(formData.mode || 'Air'),
+      ShipmentType: formData.shipmentType || 'International',
+      ServiceLevel: formData.serviceLevel || 'Standard',
+      CustomsValue: calculatedCustomsValue,
+      Currency: formData.currency || 'USD',
+      BillTo: formData.billTo || 'Shipper',
+      Status: 'draft',
+      
+      // Shipper info (PartyType = shipper)
+      Shipper: {
+        PartyType: 'shipper',
+        CompanyName: formData.shipper?.company || '',
+        ContactName: formData.shipper?.contactName || '',
+        Phone: formData.shipper?.phone || '',
+        Email: formData.shipper?.email || '',
+        Address1: formData.shipper?.address1 || '',
+        Address2: formData.shipper?.address2 || '',
+        City: formData.shipper?.city || '',
+        State: formData.shipper?.state || '',
+        PostalCode: formData.shipper?.postalCode || '',
+        Country: formData.shipper?.country || '',
+        TaxId: formData.shipper?.taxId || ''
+      },
+      
+      // Consignee info (PartyType = consignee)
+      Consignee: {
+        PartyType: 'consignee',
+        CompanyName: formData.consignee?.company || '',
+        ContactName: formData.consignee?.contactName || '',
+        Phone: formData.consignee?.phone || '',
+        Email: formData.consignee?.email || '',
+        Address1: formData.consignee?.address1 || '',
+        Address2: formData.consignee?.address2 || '',
+        City: formData.consignee?.city || '',
+        State: formData.consignee?.state || '',
+        PostalCode: formData.consignee?.postalCode || '',
+        Country: formData.consignee?.country || '',
+        TaxId: formData.consignee?.taxId || ''
+      },
+      
+      // Other parties (if any)
+      OtherParties: [],
+      
+      // Packages with products
+      Packages: (formData.packages || []).map(pkg => ({
+        PackageType: pkg.type || 'Box',
+        Length: parseFloat(pkg.length) || 0,
+        Width: parseFloat(pkg.width) || 0,
+        Height: parseFloat(pkg.height) || 0,
+        DimensionUnit: pkg.dimUnit || 'cm',
+        Weight: parseFloat(pkg.weight) || 0,
+        WeightUnit: pkg.weightUnit || 'kg',
+        Stackable: pkg.stackable || false,
+        Products: (pkg.products || []).map(prod => ({
+          Name: prod.name || '',
+          Description: prod.description || '',
+          Category: prod.category || '',
+          HsCode: prod.hsCode || '',
+          Quantity: parseInt(prod.quantity) || 1,
+          Unit: prod.uom || 'pcs',
+          UnitPrice: parseFloat(prod.unitValue) || 0,
+          TotalValue: parseFloat(prod.totalValue) || 0,
+          OriginCountry: prod.originCountry || formData.shipper?.country || ''
+        }))
+      })),
+      
+      // Services (if any additional services)
+      Services: []
+    };
+
     try {
+      // Determine if this is a new shipment or update
+      const isUpdate = formData.id && /^\d+$/.test(formData.id);
+
+      console.log('[ShipmentForm] Sending shipment payload to backend:', JSON.stringify(shipmentPayload, null, 2));
+      
+      // Use centralized axios-based shipments API; JWT is attached automatically.
+      const apiResponse = isUpdate
+        ? await updateShipment(formData.id, shipmentPayload)
+        : await createShipment(shipmentPayload);
+      
+      console.log('[ShipmentForm] Backend API response:', apiResponse);
+      
+      // Backend returns ShipmentDetailDto: { Shipment: {...}, Parties: [...], Packages: [...], Items: [...] }
+      // Extract the Shipment object which has the ID and other core fields
+      const savedShipment = apiResponse?.Shipment || apiResponse?.shipment || apiResponse;
+      console.log('[ShipmentForm] Extracted shipment from response:', savedShipment);
+      
+      // Prepare shipment object for local store and navigation (merge backend response with form data)
+      const updatedShipment = {
+        ...formData,
+        id: savedShipment.Id || savedShipment.id || savedShipment.shipmentId,
+        referenceId: savedShipment.ReferenceId || savedShipment.referenceId || savedShipment.reference_id || formData.referenceId,
+        status: savedShipment.Status || savedShipment.status || 'ai-review',
+        updatedAt: savedShipment.UpdatedAt || savedShipment.updatedAt || new Date().toISOString(),
+        createdAt: savedShipment.CreatedAt || savedShipment.createdAt || formData.createdAt || new Date().toISOString(),
+        customsValue: calculatedCustomsValue
+      };
+      
+      console.log('[ShipmentForm] Prepared shipment for navigation:', updatedShipment);
+      console.log('[ShipmentForm] Shipment numeric ID:', updatedShipment.id);
+      console.log('[ShipmentForm] Shipment reference ID:', updatedShipment.referenceId);
+
+      // Save to local store
       shipmentsStore.saveShipment(updatedShipment);
+      
+      // Navigate to details for AI evaluation - pass numeric ID
+      console.log('[ShipmentForm] Navigating to shipment-details with ID:', updatedShipment.id);
       onNavigate('shipment-details', updatedShipment);
     } catch (err) {
-      console.error('Error saving shipment', err);
-      alert('Failed to save shipment - please try again.');
+      console.error('Error saving shipment to backend:', err);
+      alert(`Failed to save shipment: ${err.message}. Please try again.`);
     }
+  };
+
+  // Check if all required documents are uploaded
+  const allRequiredDocumentsUploaded = () => {
+    const requiredDocs = requiredDocuments.filter(doc => doc.required);
+    if (requiredDocs.length === 0) return true; // No required documents
+    return requiredDocs.every(doc => doc.uploaded);
   };
 
   // Per-step validation for Next button enabling
@@ -1378,8 +1584,8 @@ export function ShipmentForm({ shipment, onNavigate }) {
 
                                   {/* HS code suggestions (AI) */}
                                   <HsSuggestionPanel
-                                    suggestions={hsSuggestions[`${pkgIdx}-${prodIdx}`] || []}
-                                    loading={loadingHsSuggestions[`${pkgIdx}-${prodIdx}`] || false}
+                                    suggestions={hsSuggestions[product.id] || []}
+                                    loading={loadingHsSuggestions[product.id] || false}
                                     selectedCode={product.hsCode}
                                     onSelect={(code) => {
                                       const updatedProducts = [...pkg.products];
@@ -1615,9 +1821,39 @@ export function ShipmentForm({ shipment, onNavigate }) {
                             <input
                               type="file"
                               accept=".pdf,.jpg,.jpeg,.png"
-                              onChange={(e) => {
+                              onChange={async (e) => {
                                 const file = e.target.files[0];
-                                if (file) setDocumentFiles(prev => ({ ...prev, [doc.name]: file }));
+                                if (file) {
+                                  setDocumentFiles(prev => ({ ...prev, [doc.name]: file }));
+                                  
+                                  // Mark document as uploaded in backend if we have a shipmentId
+                                  if (formData.id) {
+                                    try {
+                                      const token = getAuthToken();
+                                      await fetch(`/api/documents/shipments/${formData.id}/mark-uploaded`, {
+                                        method: 'POST',
+                                        headers: {
+                                          'Content-Type': 'application/json',
+                                          ...(token ? { Authorization: `Bearer ${token}` } : {})
+                                        },
+                                        credentials: 'include',
+                                        body: JSON.stringify({ documentName: doc.name })
+                                      });
+                                      
+                                      // Update local state to reflect uploaded status
+                                      setRequiredDocuments(prev => prev.map(d => 
+                                        d.name === doc.name ? { ...d, uploaded: true } : d
+                                      ));
+                                    } catch (err) {
+                                      console.error('Failed to mark document as uploaded:', err);
+                                    }
+                                  } else {
+                                    // For new shipments, just update local state
+                                    setRequiredDocuments(prev => prev.map(d => 
+                                      d.name === doc.name ? { ...d, uploaded: true } : d
+                                    ));
+                                  }
+                                }
                               }}
                               className="hidden"
                               id={`file-${idx}`}
@@ -1628,12 +1864,12 @@ export function ShipmentForm({ shipment, onNavigate }) {
                               style={{ ...yellowButtonStyle, outline: 'none', boxShadow: 'none' }}
                             >
                               <Upload className="w-4 h-4" style={{ color: '#2F1B17' }} />
-                              {documentFiles[doc.name] ? 'Change File' : 'Upload'}
+                              {doc.uploaded || documentFiles[doc.name] ? 'Change File' : 'Upload'}
                             </label>
-                            {documentFiles[doc.name] && (
+                            {(doc.uploaded || documentFiles[doc.name]) && (
                               <span className="text-sm text-green-700 flex items-center gap-1">
                                 <CheckCircle2 className="w-4 h-4" />
-                                {documentFiles[doc.name].name}
+                                {documentFiles[doc.name] ? documentFiles[doc.name].name : 'Uploaded'}
                               </span>
                             )}
                           </div>
@@ -1641,97 +1877,46 @@ export function ShipmentForm({ shipment, onNavigate }) {
                       ))
                     ) : (
                       <div className="bg-white rounded-lg p-4 border border-slate-300 text-center">
-                        <p className="text-sm" style={{ color: '#2F1B17' }}>Click "Analyze Documents" to get AI-powered document suggestions</p>
+                        <p className="text-sm" style={{ color: '#2F1B17' }}>No documents required for this shipment</p>
                       </div>
                     )}
                   </div>
                 )}
 
-                <div className="mt-6 flex gap-3">
-                  <OvalButton
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        setAnalyzingDocuments(true);
 
-                        // Build request payload matching backend API
-                        const request = {
-                          product_category: formData.productCategory || '',
-                          product_description: formData.productDescription || '',
-                          hs_code: (formData.packages && formData.packages[0] && formData.packages[0].products && formData.packages[0].products[0]) ? (formData.packages[0].products[0].hsCode || '') : (formData.hsCode || ''),
-                          origin_country: formData.originCountry || formData.shipper?.country || '',
-                          destination_country: formData.destinationCountry || formData.consignee?.country || '',
-                          package_type_weight: (formData.packages && formData.packages[0]) ? `${formData.packages[0].packageType || ''} ${formData.packages[0].weight || ''}`.trim() : '',
-                          mode_of_transport: formData.mode || '',
-                          hts_flag: !!formData.htsFlag
-                        };
-
-                        // First call prediction endpoint to get human-readable documents + confidence
-                        const res = await fetch('/api/ai/documents/predict', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify(request)
-                        });
-
-                        if (!res.ok) throw new Error('Prediction failed');
-                        const pred = await res.json();
-
-                        // Expecting { required_documents: [...], confidence_scores: {...} }
-                        const docs = (pred.required_documents || []).map(name => ({ name, required: true, description: '' , confidence: (pred.confidence_scores && pred.confidence_scores[name]) || 0 }));
-                        setRequiredDocuments(docs);
-
-                        // If shipment exists (saved), persist predictions server-side
-                        if (formData.id) {
-                          const saveReq = {
-                            ProductCategory: request.product_category,
-                            ProductDescription: request.product_description,
-                            HsCode: request.hs_code,
-                            OriginCountry: request.origin_country,
-                            DestinationCountry: request.destination_country,
-                            PackageTypeWeight: request.package_type_weight,
-                            ModeOfTransport: request.mode_of_transport,
-                            HtsFlag: request.hts_flag,
-                            ShipmentId: formData.id
-                          };
-
-                          await fetch('/api/ai/required-documents', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(saveReq)
-                          });
-                        }
-                      } catch (err) {
-                        console.error('Document analysis failed', err);
-                        alert('Failed to analyze documents. Please try again.');
-                      } finally {
-                        setAnalyzingDocuments(false);
-                      }
-                    }}
-                    className="px-4 py-2 flex items-center gap-2 font-medium text-sm text-white"
-                    style={yellowButtonStyle}
-                  >
-                    <Sparkles className="w-4 h-4" style={{ color: '#2F1B17' }} />
-                    Analyze Documents
-                  </OvalButton>
-                </div>
               </div>
 
-                <div className="flex items-center gap-3 w-full">
-                <OvalButton
-                  onClick={handleSubmit}
-                  className="flex-1 py-3 font-semibold"
-                  style={{ ...yellowButtonStyle, color: '#2F1B17' }}
-                  disabled={requiredDocuments && requiredDocuments.length > 0 && requiredDocuments.some(d => !documentFiles[d.name])}
-                >
-                  Submit for AI Review
-                </OvalButton>
+              {documentValidationError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-red-900">Upload Required</p>
+                    <p className="text-sm text-red-700 mt-1">{documentValidationError}</p>
+                  </div>
+                </div>
+              )}
 
+              <div className="flex items-center gap-3 w-full">
                 <OvalButton
                   onClick={() => onNavigate('dashboard')}
                   className="flex-1 py-3 font-semibold"
                   style={{ ...greyButtonStyle }}
                 >
                   Cancel
+                </OvalButton>
+
+                <OvalButton
+                  onClick={handleSubmit}
+                  disabled={!allRequiredDocumentsUploaded()}
+                  className="flex-1 py-3 font-semibold"
+                  style={{
+                    ...yellowButtonStyle,
+                    color: '#2F1B17',
+                    opacity: allRequiredDocumentsUploaded() ? 1 : 0.5,
+                    cursor: allRequiredDocumentsUploaded() ? 'pointer' : 'not-allowed'
+                  }}
+                >
+                  Submit for AI Review
                 </OvalButton>
               </div>
 

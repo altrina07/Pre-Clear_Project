@@ -1,11 +1,14 @@
-import axios from 'axios';
-
-const api = axios.create({ baseURL: '/api', withCredentials: false });
+import http, { setAuthToken } from '../../api/http';
 
 export async function signUp(payload) {
-  return api.post('/auth/signup', payload).then(r => r.data);
+  const resp = await http.post('/auth/signup', payload);
+  return resp.data;
 }
 
 export async function signIn(payload) {
-  return api.post('/auth/signin', payload).then(r => r.data);
+  const resp = await http.post('/auth/signin', payload);
+  const data = resp.data;
+  if (data?.token) setAuthToken(data.token);
+  try { if (data?.id != null) localStorage.setItem('pc_userId', String(data.id)); } catch {}
+  return data;
 }

@@ -26,16 +26,19 @@ export const useRequiredDocuments = (
     setError(null);
 
     try {
-      // Map frontend field names to API format expected by backend
+      // Map frontend field names to API format
       const request = {
-        product_category: data.productCategory || data.category || '',
+        product_name: data.productName || '',
+        category: data.category || '',
         product_description: data.productDescription || '',
         hs_code: data.hsCode || '',
-        origin_country: data.originCountry || data.shipper?.country || '',
-        destination_country: data.destinationCountry || data.consignee?.country || '',
-        package_type_weight: data.packageTypeWeight || '',
-        mode_of_transport: data.mode || '',
-        hts_flag: !!data.htsFlag
+        origin_country: data.originCountry || '',
+        destination_country: data.destinationCountry || '',
+        package_type: data.packageType || '',
+        weight: parseFloat(data.weight) || 0,
+        declared_value: parseFloat(data.declaredValue) || 0,
+        shipment_type: data.shipmentType || 'Domestic',
+        service_level: data.serviceLevel || 'Standard',
       };
 
       const response = await fetch('/api/ai/documents/predict', {
@@ -52,22 +55,17 @@ export const useRequiredDocuments = (
 
       const result = await response.json();
 
-      // result.required_documents = ["Invoice", "Packing List"]
-      const docs = (result.required_documents || []).map((name) => ({
-        name,
-        confidence: (result.confidence_scores && result.confidence_scores[name]) || 0,
-        provenance: (result.provenance && result.provenance[name]) || 'ml',
-      }));
-
       // Sort by confidence descending
-      const sorted = docs.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+      const sorted = (result.predicted_documents || []).sort(
+        (a, b) => (b.confidence || 0) - (a.confidence || 0)
+      );
 
       setDocuments(sorted);
       setMetadata({
-        mode: result.mode || 'ml',
-        modelVersion: result.model_version || '1.0',
-        timestamp: result.timestamp || new Date().toISOString(),
-        confidenceThreshold: result.confidence_threshold || 0.3,
+        mode: result.mode,
+        modelVersion: result.model_version,
+        timestamp: result.timestamp,
+        confidenceThreshold: result.confidence_threshold,
       });
     } catch (err) {
       setError(err.message || 'Failed to fetch document recommendations');

@@ -10,5 +10,6 @@ namespace PreClear.Api.Interfaces
         Task<List<ShipmentDocument>> GetByShipmentIdAsync(long shipmentId);
         Task<ShipmentDocument?> FindAsync(long id);
         Task UpdateAsync(ShipmentDocument doc);
+        Task<bool> MarkAsUploadedAsync(long shipmentId, string documentName);
     }
 }

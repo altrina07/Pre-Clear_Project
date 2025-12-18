@@ -19,217 +19,71 @@ namespace backend.Migrations
                 .HasAnnotation("ProductVersion", "8.0.0")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
-            modelBuilder.Entity("PreClear.Api.Models.AiFinding", b =>
+            modelBuilder.Entity("PreClear.Api.Models.BrokerProfile", b =>
                 {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(3)")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP(3)");
-
-                    b.Property<string>("Details")
-                        .HasColumnType("json")
-                        .HasColumnName("details");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("message");
-
-                    b.Property<string>("RuleCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)")
-                        .HasColumnName("rule_code");
-
-                    b.Property<string>("Severity")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasDefaultValue("warning")
-                        .HasColumnName("severity");
-
-                    b.Property<long>("ShipmentId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("shipment_id");
-
-                    b.Property<string>("SuggestedAction")
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("suggested_action");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ShipmentId")
-                        .HasDatabaseName("idx_aifindings_shipment");
-
-                    b.ToTable("ai_findings", (string)null);
-                });
-
-            modelBuilder.Entity("PreClear.Api.Models.ApprovalLog", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    b.Property<string>("Action")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasColumnName("action");
-
-                    b.Property<long?>("ApproverId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("approver_id");
-
-                    b.Property<string>("ApproverRole")
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasColumnName("approver_role");
-
-                    b.Property<string>("Comments")
-                        .HasColumnType("text")
-                        .HasColumnName("comments");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(3)")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP(3)");
-
-                    b.Property<string>("Entity")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)")
-                        .HasColumnName("entity");
-
-                    b.Property<long?>("EntityId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("entity_id");
-
-                    b.Property<string>("Metadata")
-                        .HasColumnType("json")
-                        .HasColumnName("metadata");
-
-                    b.Property<string>("NewState")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)")
-                        .HasColumnName("new_state");
-
-                    b.Property<string>("PreviousState")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)")
-                        .HasColumnName("previous_state");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApproverId")
-                        .HasDatabaseName("idx_approval_approver");
-
-                    b.HasIndex("Entity", "EntityId")
-                        .HasDatabaseName("idx_approval_entity");
-
-                    b.ToTable("approval_logs", (string)null);
-                });
-
-            modelBuilder.Entity("PreClear.Api.Models.AuditLog", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    b.Property<string>("Action")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)")
-                        .HasColumnName("action");
-
-                    b.Property<string>("Details")
-                        .HasColumnType("json")
-                        .HasColumnName("details");
-
-                    b.Property<string>("Entity")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)")
-                        .HasColumnName("entity");
-
-                    b.Property<long?>("EntityId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("entity_id");
-
-                    b.Property<DateTime>("PerformedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(3)")
-                        .HasColumnName("performed_at")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP(3)");
-
-                    b.Property<long?>("UserId")
+                    b.Property<long>("UserId")
                         .HasColumnType("bigint")
                         .HasColumnName("user_id");
 
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("Entity", "EntityId")
-                        .HasDatabaseName("idx_audit_entity");
-
-                    b.ToTable("audit_logs", (string)null);
-                });
-
-            modelBuilder.Entity("PreClear.Api.Models.BrokerRequest", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime(3)")
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("CURRENT_TIMESTAMP(3)");
 
-                    b.Property<DateTime?>("FulfilledAt")
-                        .HasColumnType("datetime(3)")
-                        .HasColumnName("fulfilled_at");
+                    b.Property<string>("DestinationCountriesJson")
+                        .HasColumnType("json")
+                        .HasColumnName("destination_countries");
 
-                    b.Property<string>("Message")
-                        .HasColumnType("text")
-                        .HasColumnName("message");
+                    b.Property<string>("HsCategoriesJson")
+                        .HasColumnType("json")
+                        .HasColumnName("hs_categories");
 
-                    b.Property<string>("RequestedDocument")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("requested_document");
-
-                    b.Property<long>("ShipmentId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("shipment_id");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
+                    b.Property<bool>("IsAvailable")
                         .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasDefaultValue("Open")
-                        .HasColumnName("status");
+                        .HasColumnType("tinyint(1)")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_available");
 
-                    b.HasKey("Id");
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)")
+                        .HasColumnName("language");
 
-                    b.HasIndex("ShipmentId")
-                        .HasDatabaseName("idx_brokerrequests_shipment");
+                    b.Property<string>("LicenseNumber")
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)")
+                        .HasColumnName("license_number");
 
-                    b.ToTable("broker_requests", (string)null);
+                    b.Property<int>("MaxConcurrentShipments")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(10)
+                        .HasColumnName("max_concurrent_shipments");
+
+                    b.Property<string>("OriginCountriesJson")
+                        .HasColumnType("json")
+                        .HasColumnName("origin_countries");
+
+                    b.Property<string>("Timezone")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("timezone");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("datetime(3)")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int?>("YearsOfExperience")
+                        .HasColumnType("int")
+                        .HasColumnName("years_of_experience");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("broker_profiles", (string)null);
                 });
 
             modelBuilder.Entity("PreClear.Api.Models.BrokerReview", b =>
@@ -239,6 +93,11 @@ namespace backend.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("id");
 
+                    b.Property<string>("Action")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("action");
+
                     b.Property<long?>("BrokerId")
                         .HasColumnType("bigint")
                         .HasColumnName("broker_id");
@@ -247,11 +106,9 @@ namespace backend.Migrations
                         .HasColumnType("text")
                         .HasColumnName("comments");
 
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(3)")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP(3)");
+                    b.Property<string>("RequestedDocumentsJson")
+                        .HasColumnType("json")
+                        .HasColumnName("requested_documents");
 
                     b.Property<DateTime?>("ReviewedAt")
                         .HasColumnType("datetime(3)")
@@ -261,117 +118,15 @@ namespace backend.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("shipment_id");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasDefaultValue("Pending")
-                        .HasColumnName("status");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("BrokerId");
+                    b.HasIndex("BrokerId")
+                        .HasDatabaseName("idx_brokerreviews_broker");
 
                     b.HasIndex("ShipmentId")
                         .HasDatabaseName("idx_brokerreviews_shipment");
 
                     b.ToTable("broker_reviews", (string)null);
-                });
-
-            modelBuilder.Entity("PreClear.Api.Models.ImportExportRule", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    b.Property<bool>("Active")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
-                        .HasDefaultValue(true)
-                        .HasColumnName("active");
-
-                    b.Property<string>("CountryCode")
-                        .HasMaxLength(2)
-                        .HasColumnType("varchar(2)")
-                        .HasColumnName("country_code");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(3)")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP(3)");
-
-                    b.Property<long?>("CreatedBy")
-                        .HasColumnType("bigint")
-                        .HasColumnName("created_by");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text")
-                        .HasColumnName("description");
-
-                    b.Property<DateTime?>("EffectiveFrom")
-                        .HasColumnType("datetime(3)")
-                        .HasColumnName("effective_from");
-
-                    b.Property<DateTime?>("EffectiveTo")
-                        .HasColumnType("datetime(3)")
-                        .HasColumnName("effective_to");
-
-                    b.Property<string>("HsCode")
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasColumnName("hs_code");
-
-                    b.Property<string>("RuleJson")
-                        .HasColumnType("json")
-                        .HasColumnName("rule_json");
-
-                    b.Property<string>("RuleKey")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)")
-                        .HasColumnName("rule_key");
-
-                    b.Property<string>("Source")
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("source");
-
-                    b.Property<string>("Title")
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("title");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("datetime(3)")
-                        .HasColumnName("updated_at");
-
-                    b.Property<int>("Version")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasDefaultValue(1)
-                        .HasColumnName("version");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Active")
-                        .HasDatabaseName("idx_rules_active");
-
-                    b.HasIndex("CountryCode")
-                        .HasDatabaseName("idx_rules_country");
-
-                    b.HasIndex("CreatedBy");
-
-                    b.HasIndex("HsCode")
-                        .HasDatabaseName("idx_rules_hs");
-
-                    b.HasIndex("RuleKey")
-                        .HasDatabaseName("idx_rules_key");
-
-                    b.ToTable("import_export_rules", (string)null);
                 });
 
             modelBuilder.Entity("PreClear.Api.Models.Notification", b =>
@@ -394,153 +149,39 @@ namespace backend.Migrations
                         .HasColumnName("is_read");
 
                     b.Property<string>("Message")
+                        .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("message");
 
+                    b.Property<long?>("ShipmentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("shipment_id");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)")
+                        .HasColumnName("title");
+
                     b.Property<string>("Type")
+                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)")
                         .HasColumnName("type");
 
-                    b.Property<long?>("UserId")
+                    b.Property<long>("UserId")
                         .HasColumnType("bigint")
                         .HasColumnName("user_id");
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ShipmentId")
+                        .HasDatabaseName("idx_notifications_shipment");
+
                     b.HasIndex("UserId")
                         .HasDatabaseName("idx_notifications_user");
 
                     b.ToTable("notifications", (string)null);
-                });
-
-            modelBuilder.Entity("PreClear.Api.Models.Payment", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("decimal(18,2)")
-                        .HasColumnName("amount");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(3)")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP(3)");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(3)
-                        .HasColumnType("varchar(3)")
-                        .HasDefaultValue("USD")
-                        .HasColumnName("currency");
-
-                    b.Property<DateTime?>("PaidAt")
-                        .HasColumnType("datetime(3)")
-                        .HasColumnName("paid_at");
-
-                    b.Property<string>("Payer")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasDefaultValue("Shipper")
-                        .HasColumnName("payer");
-
-                    b.Property<string>("PaymentMethod")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)")
-                        .HasColumnName("payment_method");
-
-                    b.Property<string>("PaymentStatus")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasDefaultValue("pending")
-                        .HasColumnName("payment_status");
-
-                    b.Property<long>("ShipmentId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("shipment_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PaymentStatus")
-                        .HasDatabaseName("idx_payments_status");
-
-                    b.HasIndex("ShipmentId")
-                        .HasDatabaseName("idx_payments_shipment");
-
-                    b.ToTable("payments", (string)null);
-                });
-
-            modelBuilder.Entity("PreClear.Api.Models.RuleChangeRequest", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(3)")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("CURRENT_TIMESTAMP(3)");
-
-                    b.Property<string>("ProposedRuleJson")
-                        .HasColumnType("json")
-                        .HasColumnName("proposed_rule_json");
-
-                    b.Property<long?>("ProposerId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("proposer_id");
-
-                    b.Property<string>("Rationale")
-                        .HasColumnType("text")
-                        .HasColumnName("rationale");
-
-                    b.Property<DateTime?>("ReviewedAt")
-                        .HasColumnType("datetime(3)")
-                        .HasColumnName("reviewed_at");
-
-                    b.Property<long?>("ReviewedBy")
-                        .HasColumnType("bigint")
-                        .HasColumnName("reviewed_by");
-
-                    b.Property<long?>("RuleId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("rule_id");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasDefaultValue("pending")
-                        .HasColumnName("status");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("datetime(3)")
-                        .HasColumnName("updated_at");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProposerId");
-
-                    b.HasIndex("ReviewedBy");
-
-                    b.HasIndex("RuleId");
-
-                    b.HasIndex("Status")
-                        .HasDatabaseName("idx_rcr_status");
-
-                    b.ToTable("rule_change_requests", (string)null);
                 });
 
             modelBuilder.Entity("PreClear.Api.Models.Shipment", b =>
@@ -550,13 +191,25 @@ namespace backend.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("id");
 
-                    b.Property<string>("Carrier")
+                    b.Property<string>("AiApprovalStatus")
                         .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)")
-                        .HasDefaultValue("UPS")
-                        .HasColumnName("carrier");
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("ai_approval_status");
+
+                    b.Property<decimal?>("AiComplianceScore")
+                        .HasColumnType("decimal(5,2)")
+                        .HasColumnName("ai_compliance_score");
+
+                    b.Property<long?>("AssignedBrokerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("assigned_broker_id");
+
+                    b.Property<string>("BrokerApprovalStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("broker_approval_status");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -564,16 +217,25 @@ namespace backend.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("CURRENT_TIMESTAMP(3)");
 
-                    b.Property<long?>("CreatedBy")
+                    b.Property<long>("CreatedBy")
                         .HasColumnType("bigint")
                         .HasColumnName("created_by");
 
+                    b.Property<string>("Currency")
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("varchar(3)")
+                        .HasDefaultValue("USD")
+                        .HasColumnName("currency");
+
+                    b.Property<decimal?>("CustomsValue")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("customs_value");
+
                     b.Property<string>("Mode")
                         .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(10)
-                        .HasColumnType("varchar(10)")
-                        .HasDefaultValue("Ground")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
                         .HasColumnName("mode");
 
                     b.Property<string>("PreclearToken")
@@ -587,6 +249,11 @@ namespace backend.Migrations
                         .HasColumnType("varchar(120)")
                         .HasColumnName("reference_id");
 
+                    b.Property<string>("ServiceLevel")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("service_level");
+
                     b.Property<string>("ShipmentName")
                         .HasMaxLength(255)
                         .HasColumnType("varchar(255)")
@@ -594,10 +261,8 @@ namespace backend.Migrations
 
                     b.Property<string>("ShipmentType")
                         .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasDefaultValue("International")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
                         .HasColumnName("shipment_type");
 
                     b.Property<string>("Status")
@@ -608,6 +273,10 @@ namespace backend.Migrations
                         .HasDefaultValue("draft")
                         .HasColumnName("status");
 
+                    b.Property<DateTime?>("TokenGeneratedAt")
+                        .HasColumnType("datetime(3)")
+                        .HasColumnName("token_generated_at");
+
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("datetime(3)")
@@ -615,12 +284,17 @@ namespace backend.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CreatedBy");
+                    b.HasIndex("AssignedBrokerId")
+                        .HasDatabaseName("idx_shipments_assigned_broker");
+
+                    b.HasIndex("CreatedBy")
+                        .HasDatabaseName("idx_shipments_created_by");
 
                     b.HasIndex("Mode")
                         .HasDatabaseName("idx_shipments_mode");
 
                     b.HasIndex("ReferenceId")
+                        .IsUnique()
                         .HasDatabaseName("idx_shipments_reference");
 
                     b.HasIndex("Status")
@@ -635,32 +309,23 @@ namespace backend.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("shipment_id");
 
-                    b.Property<string>("AiNotes")
-                        .HasColumnType("json")
-                        .HasColumnName("ai_notes");
-
-                    b.Property<int?>("AiScore")
-                        .HasColumnType("int")
-                        .HasColumnName("ai_score");
-
-                    b.Property<string>("AiStatus")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasDefaultValue("NeedsDocuments")
-                        .HasColumnName("ai_status");
-
                     b.Property<bool>("DangerousGoods")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("tinyint(1)")
                         .HasDefaultValue(false)
                         .HasColumnName("dangerous_goods");
 
-                    b.Property<string>("Eccn")
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasColumnName("eccn");
+                    b.Property<decimal?>("EstimatedDuty")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("estimated_duty");
+
+                    b.Property<decimal?>("EstimatedTax")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("estimated_tax");
+
+                    b.Property<DateTime>("EvaluatedAt")
+                        .HasColumnType("datetime(3)")
+                        .HasColumnName("evaluated_at");
 
                     b.Property<bool>("ExportLicenseRequired")
                         .ValueGeneratedOnAdd()
@@ -680,30 +345,29 @@ namespace backend.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("lithium_battery");
 
-                    b.Property<bool>("RestrictedFlag")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
-                        .HasDefaultValue(false)
-                        .HasColumnName("restricted_flag");
+                    b.Property<string>("MissingDocumentsJson")
+                        .HasColumnType("json")
+                        .HasColumnName("missing_documents");
+
+                    b.Property<decimal?>("OverallScore")
+                        .HasColumnType("decimal(5,2)")
+                        .HasColumnName("overall_score");
+
+                    b.Property<string>("RequiredDocumentsJson")
+                        .HasColumnType("json")
+                        .HasColumnName("required_documents");
 
                     b.Property<string>("RiskLevel")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(10)
-                        .HasColumnType("varchar(10)")
-                        .HasDefaultValue("Low")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
                         .HasColumnName("risk_level");
 
-                    b.Property<bool>("SanctionedCountryFlag")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
-                        .HasDefaultValue(false)
-                        .HasColumnName("sanctioned_country_flag");
+                    b.Property<string>("SuggestedHsCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("suggested_hs_code");
 
                     b.HasKey("ShipmentId");
-
-                    b.HasIndex("AiStatus")
-                        .HasDatabaseName("idx_compliance_ai_status");
 
                     b.ToTable("shipment_compliance", (string)null);
                 });
@@ -717,37 +381,33 @@ namespace backend.Migrations
 
                     b.Property<string>("DocumentType")
                         .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasDefaultValue("Other")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
                         .HasColumnName("document_type");
 
-                    b.Property<string>("FileUrl")
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)")
+                        .HasColumnName("file_name");
+
+                    b.Property<string>("FilePath")
                         .HasMaxLength(2000)
                         .HasColumnType("varchar(2000)")
-                        .HasColumnName("file_url");
+                        .HasColumnName("file_path");
 
-                    b.Property<string>("Name")
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("name");
+                    b.Property<long?>("FileSize")
+                        .HasColumnType("bigint")
+                        .HasColumnName("file_size");
 
-                    b.Property<bool>("Required")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
-                        .HasDefaultValue(false)
-                        .HasColumnName("required");
+                    b.Property<string>("MimeType")
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)")
+                        .HasColumnName("mime_type");
 
                     b.Property<long>("ShipmentId")
                         .HasColumnType("bigint")
                         .HasColumnName("shipment_id");
-
-                    b.Property<bool>("Uploaded")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
-                        .HasDefaultValue(false)
-                        .HasColumnName("uploaded");
 
                     b.Property<DateTime>("UploadedAt")
                         .ValueGeneratedOnAdd()
@@ -759,95 +419,27 @@ namespace backend.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("uploaded_by");
 
-                    b.Property<bool>("VerifiedByBroker")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
-                        .HasDefaultValue(false)
-                        .HasColumnName("verified_by_broker");
+                    b.Property<decimal?>("ValidationConfidence")
+                        .HasColumnType("decimal(5,2)")
+                        .HasColumnName("validation_confidence");
 
-                    b.Property<int>("Version")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasDefaultValue(1)
-                        .HasColumnName("version");
+                    b.Property<string>("ValidationNotesJson")
+                        .HasColumnType("json")
+                        .HasColumnName("validation_notes");
+
+                    b.Property<string>("ValidationStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("validation_status");
 
                     b.HasKey("Id");
 
                     b.HasIndex("ShipmentId")
                         .HasDatabaseName("idx_documents_shipment");
 
+                    b.HasIndex("UploadedBy");
+
                     b.ToTable("shipment_documents", (string)null);
-                });
-
-            modelBuilder.Entity("PreClear.Api.Models.ShipmentItem", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    b.Property<string>("CountryOfOrigin")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)")
-                        .HasColumnName("country_of_origin");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text")
-                        .HasColumnName("description");
-
-                    b.Property<string>("ExportReason")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasDefaultValue("Sale")
-                        .HasColumnName("export_reason");
-
-                    b.Property<string>("HsCode")
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasColumnName("hs_code");
-
-                    b.Property<string>("ProductName")
-                        .HasMaxLength(500)
-                        .HasColumnType("varchar(500)")
-                        .HasColumnName("product_name");
-
-                    b.Property<decimal>("Quantity")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("decimal(18,3)")
-                        .HasDefaultValue(1m)
-                        .HasColumnName("quantity");
-
-                    b.Property<long>("ShipmentId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("shipment_id");
-
-                    b.Property<decimal?>("TotalValue")
-                        .HasColumnType("decimal(18,4)")
-                        .HasColumnName("total_value");
-
-                    b.Property<string>("Unit")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasDefaultValue("pcs")
-                        .HasColumnName("unit");
-
-                    b.Property<decimal?>("UnitPrice")
-                        .HasColumnType("decimal(18,4)")
-                        .HasColumnName("unit_price");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("HsCode")
-                        .HasDatabaseName("idx_items_hscode");
-
-                    b.HasIndex("ShipmentId")
-                        .HasDatabaseName("idx_items_shipment");
-
-                    b.ToTable("shipment_items", (string)null);
                 });
 
             modelBuilder.Entity("PreClear.Api.Models.ShipmentMessage", b =>
@@ -868,7 +460,7 @@ namespace backend.Migrations
                         .HasColumnType("text")
                         .HasColumnName("message");
 
-                    b.Property<long?>("SenderId")
+                    b.Property<long>("SenderId")
                         .HasColumnType("bigint")
                         .HasColumnName("sender_id");
 
@@ -878,7 +470,8 @@ namespace backend.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SenderId");
+                    b.HasIndex("SenderId")
+                        .HasDatabaseName("idx_msgs_sender");
 
                     b.HasIndex("ShipmentId")
                         .HasDatabaseName("idx_msgs_shipment");
@@ -895,10 +488,8 @@ namespace backend.Migrations
 
                     b.Property<string>("DimensionUnit")
                         .IsRequired()
-                        .ValueGeneratedOnAdd()
                         .HasMaxLength(10)
                         .HasColumnType("varchar(10)")
-                        .HasDefaultValue("cm")
                         .HasColumnName("dimension_unit");
 
                     b.Property<decimal?>("Height")
@@ -911,10 +502,8 @@ namespace backend.Migrations
 
                     b.Property<string>("PackageType")
                         .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasDefaultValue("Box")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
                         .HasColumnName("package_type");
 
                     b.Property<long>("ShipmentId")
@@ -933,10 +522,8 @@ namespace backend.Migrations
 
                     b.Property<string>("WeightUnit")
                         .IsRequired()
-                        .ValueGeneratedOnAdd()
                         .HasMaxLength(10)
                         .HasColumnType("varchar(10)")
-                        .HasDefaultValue("kg")
                         .HasColumnName("weight_unit");
 
                     b.Property<decimal?>("Width")
@@ -961,12 +548,12 @@ namespace backend.Migrations
                     b.Property<string>("Address1")
                         .HasMaxLength(500)
                         .HasColumnType("varchar(500)")
-                        .HasColumnName("address1");
+                        .HasColumnName("address_1");
 
                     b.Property<string>("Address2")
                         .HasMaxLength(500)
                         .HasColumnType("varchar(500)")
-                        .HasColumnName("address2");
+                        .HasColumnName("address_2");
 
                     b.Property<string>("City")
                         .HasMaxLength(150)
@@ -1032,65 +619,123 @@ namespace backend.Migrations
                     b.ToTable("shipment_parties", (string)null);
                 });
 
-            modelBuilder.Entity("PreClear.Api.Models.ShipmentService", b =>
-                {
-                    b.Property<long>("ShipmentId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("shipment_id");
-
-                    b.Property<string>("BillTo")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasDefaultValue("Shipper")
-                        .HasColumnName("bill_to");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(3)
-                        .HasColumnType("varchar(3)")
-                        .HasDefaultValue("USD")
-                        .HasColumnName("currency");
-
-                    b.Property<decimal?>("DeclaredValue")
-                        .HasColumnType("decimal(18,2)")
-                        .HasColumnName("declared_value");
-
-                    b.Property<string>("Incoterm")
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasColumnName("incoterm");
-
-                    b.Property<bool>("InsuranceRequired")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
-                        .HasDefaultValue(false)
-                        .HasColumnName("insurance_required");
-
-                    b.Property<string>("ServiceLevel")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasDefaultValue("Standard")
-                        .HasColumnName("service_level");
-
-                    b.HasKey("ShipmentId");
-
-                    b.HasIndex("ShipmentId")
-                        .HasDatabaseName("idx_services_shipment");
-
-                    b.ToTable("shipment_services", (string)null);
-                });
-
-            modelBuilder.Entity("PreClear.Api.Models.ShipmentTracking", b =>
+            modelBuilder.Entity("PreClear.Api.Models.ShipmentProduct", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint")
                         .HasColumnName("id");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)")
+                        .HasColumnName("category");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("ExportReason")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasDefaultValue("Sale")
+                        .HasColumnName("export_reason");
+
+                    b.Property<string>("HsCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("hs_code");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("OriginCountry")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("origin_country");
+
+                    b.Property<long>("PackageId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("package_id");
+
+                    b.Property<decimal>("Quantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,3)")
+                        .HasDefaultValue(1m)
+                        .HasColumnName("quantity");
+
+                    b.Property<long>("ShipmentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("shipment_id");
+
+                    b.Property<decimal?>("TotalValue")
+                        .HasColumnType("decimal(18,4)")
+                        .HasColumnName("total_value");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasDefaultValue("pcs")
+                        .HasColumnName("unit");
+
+                    b.Property<decimal?>("UnitPrice")
+                        .HasColumnType("decimal(18,4)")
+                        .HasColumnName("unit_price");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HsCode")
+                        .HasDatabaseName("idx_products_hscode");
+
+                    b.HasIndex("PackageId")
+                        .HasDatabaseName("idx_products_package");
+
+                    b.HasIndex("ShipmentId")
+                        .HasDatabaseName("idx_products_shipment");
+
+                    b.ToTable("shipment_products", (string)null);
+                });
+
+            modelBuilder.Entity("PreClear.Api.Models.ShipperProfile", b =>
+                {
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("AddressLine1")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)")
+                        .HasColumnName("address_line_1");
+
+                    b.Property<string>("AddressLine2")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)")
+                        .HasColumnName("address_line_2");
+
+                    b.Property<string>("City")
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)")
+                        .HasColumnName("city");
+
+                    b.Property<string>("CompanyRole")
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)")
+                        .HasColumnName("company_role");
+
+                    b.Property<string>("CountryCode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(2)
+                        .HasColumnType("varchar(2)")
+                        .HasDefaultValue("US")
+                        .HasColumnName("country_code");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -1098,34 +743,40 @@ namespace backend.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("CURRENT_TIMESTAMP(3)");
 
-                    b.Property<string>("Details")
-                        .HasColumnType("json")
-                        .HasColumnName("details");
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)")
+                        .HasDefaultValue("en")
+                        .HasColumnName("language");
 
-                    b.Property<DateTime?>("EventTime")
+                    b.Property<string>("PostalCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("postal_code");
+
+                    b.Property<string>("State")
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)")
+                        .HasColumnName("state");
+
+                    b.Property<string>("Timezone")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasDefaultValue("America/New_York")
+                        .HasColumnName("timezone");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("datetime(3)")
-                        .HasColumnName("event_time");
+                        .HasColumnName("updated_at");
 
-                    b.Property<string>("Location")
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("location");
+                    b.HasKey("UserId");
 
-                    b.Property<long>("ShipmentId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("shipment_id");
-
-                    b.Property<string>("Status")
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)")
-                        .HasColumnName("status");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ShipmentId")
-                        .HasDatabaseName("idx_tracking_shipment");
-
-                    b.ToTable("shipment_tracking", (string)null);
+                    b.ToTable("shipper_profiles", (string)null);
                 });
 
             modelBuilder.Entity("PreClear.Api.Models.User", b =>
@@ -1136,7 +787,6 @@ namespace backend.Migrations
                         .HasColumnName("id");
 
                     b.Property<string>("Company")
-                        .IsRequired()
                         .HasMaxLength(255)
                         .HasColumnType("varchar(255)")
                         .HasColumnName("company");
@@ -1165,15 +815,6 @@ namespace backend.Migrations
                         .HasColumnType("varchar(150)")
                         .HasColumnName("first_name");
 
-                    b.Property<string>("InviteCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)")
-                        .HasColumnName("invite_code");
-
-                    b.Property<DateTime?>("InviteExpiresAt")
-                        .HasColumnType("datetime(3)")
-                        .HasColumnName("invite_expires_at");
-
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("tinyint(1)")
@@ -1186,16 +827,9 @@ namespace backend.Migrations
                         .HasColumnType("varchar(150)")
                         .HasColumnName("last_name");
 
-                    b.Property<string>("Metadata")
+                    b.Property<string>("MetadataJson")
                         .HasColumnType("json")
                         .HasColumnName("metadata");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("longtext")
-                        .HasColumnName("name")
-                        .HasComputedColumnSql("CONCAT(COALESCE(first_name,''),' ',COALESCE(last_name,''))", false);
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
@@ -1204,7 +838,6 @@ namespace backend.Migrations
                         .HasColumnName("password_hash");
 
                     b.Property<string>("Phone")
-                        .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)")
                         .HasColumnName("phone");
@@ -1222,7 +855,7 @@ namespace backend.Migrations
                         .HasColumnName("tos_accepted");
 
                     b.Property<DateTime?>("TosAcceptedAt")
-                        .HasColumnType("datetime(3)")
+                        .HasColumnType("datetime(6)")
                         .HasColumnName("tos_accepted_at");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -1231,8 +864,8 @@ namespace backend.Migrations
                         .HasColumnName("updated_at");
 
                     b.Property<string>("VerificationToken")
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)")
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)")
                         .HasColumnName("verification_token");
 
                     b.HasKey("Id");
@@ -1249,197 +882,194 @@ namespace backend.Migrations
                     b.ToTable("users", (string)null);
                 });
 
-            modelBuilder.Entity("PreClear.Api.Models.AiFinding", b =>
+            modelBuilder.Entity("PreClear.Api.Models.BrokerProfile", b =>
                 {
-                    b.HasOne("PreClear.Api.Models.Shipment", null)
-                        .WithMany()
-                        .HasForeignKey("ShipmentId")
+                    b.HasOne("PreClear.Api.Models.User", "User")
+                        .WithOne("BrokerProfile")
+                        .HasForeignKey("PreClear.Api.Models.BrokerProfile", "UserId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_aifindings_shipment");
-                });
+                        .IsRequired();
 
-            modelBuilder.Entity("PreClear.Api.Models.ApprovalLog", b =>
-                {
-                    b.HasOne("PreClear.Api.Models.User", null)
-                        .WithMany()
-                        .HasForeignKey("ApproverId")
-                        .OnDelete(DeleteBehavior.SetNull);
-                });
-
-            modelBuilder.Entity("PreClear.Api.Models.AuditLog", b =>
-                {
-                    b.HasOne("PreClear.Api.Models.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_audit_user");
-                });
-
-            modelBuilder.Entity("PreClear.Api.Models.BrokerRequest", b =>
-                {
-                    b.HasOne("PreClear.Api.Models.Shipment", null)
-                        .WithMany()
-                        .HasForeignKey("ShipmentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_brokerrequests_shipment");
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("PreClear.Api.Models.BrokerReview", b =>
                 {
-                    b.HasOne("PreClear.Api.Models.User", null)
+                    b.HasOne("PreClear.Api.Models.User", "Broker")
                         .WithMany()
                         .HasForeignKey("BrokerId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_brokerreviews_broker");
+                        .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("PreClear.Api.Models.Shipment", null)
+                    b.HasOne("PreClear.Api.Models.Shipment", "Shipment")
                         .WithMany()
                         .HasForeignKey("ShipmentId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_brokerreviews_shipment");
-                });
+                        .IsRequired();
 
-            modelBuilder.Entity("PreClear.Api.Models.ImportExportRule", b =>
-                {
-                    b.HasOne("PreClear.Api.Models.User", null)
-                        .WithMany()
-                        .HasForeignKey("CreatedBy")
-                        .OnDelete(DeleteBehavior.SetNull);
+                    b.Navigation("Broker");
+
+                    b.Navigation("Shipment");
                 });
 
             modelBuilder.Entity("PreClear.Api.Models.Notification", b =>
                 {
-                    b.HasOne("PreClear.Api.Models.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_notifications_user");
-                });
-
-            modelBuilder.Entity("PreClear.Api.Models.Payment", b =>
-                {
-                    b.HasOne("PreClear.Api.Models.Shipment", null)
+                    b.HasOne("PreClear.Api.Models.Shipment", "Shipment")
                         .WithMany()
                         .HasForeignKey("ShipmentId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("PreClear.Api.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_payments_shipment");
-                });
+                        .IsRequired();
 
-            modelBuilder.Entity("PreClear.Api.Models.RuleChangeRequest", b =>
-                {
-                    b.HasOne("PreClear.Api.Models.User", null)
-                        .WithMany()
-                        .HasForeignKey("ProposerId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                    b.Navigation("Shipment");
 
-                    b.HasOne("PreClear.Api.Models.User", null)
-                        .WithMany()
-                        .HasForeignKey("ReviewedBy")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("PreClear.Api.Models.ImportExportRule", null)
-                        .WithMany()
-                        .HasForeignKey("RuleId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("PreClear.Api.Models.Shipment", b =>
                 {
-                    b.HasOne("PreClear.Api.Models.User", null)
+                    b.HasOne("PreClear.Api.Models.User", "AssignedBroker")
+                        .WithMany()
+                        .HasForeignKey("AssignedBrokerId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("FK_shipments_users_assigned_broker");
+
+                    b.HasOne("PreClear.Api.Models.User", "Creator")
                         .WithMany()
                         .HasForeignKey("CreatedBy")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_shipments_createdby");
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("FK_shipments_users_created_by");
+
+                    b.Navigation("AssignedBroker");
+
+                    b.Navigation("Creator");
                 });
 
             modelBuilder.Entity("PreClear.Api.Models.ShipmentCompliance", b =>
                 {
-                    b.HasOne("PreClear.Api.Models.Shipment", null)
-                        .WithOne()
+                    b.HasOne("PreClear.Api.Models.Shipment", "Shipment")
+                        .WithOne("Compliance")
                         .HasForeignKey("PreClear.Api.Models.ShipmentCompliance", "ShipmentId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_compliance_shipment");
+                        .IsRequired();
+
+                    b.Navigation("Shipment");
                 });
 
             modelBuilder.Entity("PreClear.Api.Models.ShipmentDocument", b =>
                 {
-                    b.HasOne("PreClear.Api.Models.Shipment", null)
-                        .WithMany()
+                    b.HasOne("PreClear.Api.Models.Shipment", "Shipment")
+                        .WithMany("Documents")
                         .HasForeignKey("ShipmentId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_docs_shipment");
-                });
+                        .IsRequired();
 
-            modelBuilder.Entity("PreClear.Api.Models.ShipmentItem", b =>
-                {
-                    b.HasOne("PreClear.Api.Models.Shipment", null)
+                    b.HasOne("PreClear.Api.Models.User", "Uploader")
                         .WithMany()
-                        .HasForeignKey("ShipmentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_items_shipment");
+                        .HasForeignKey("UploadedBy")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Shipment");
+
+                    b.Navigation("Uploader");
                 });
 
             modelBuilder.Entity("PreClear.Api.Models.ShipmentMessage", b =>
                 {
-                    b.HasOne("PreClear.Api.Models.User", null)
+                    b.HasOne("PreClear.Api.Models.User", "Sender")
                         .WithMany()
                         .HasForeignKey("SenderId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_msgs_sender");
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
-                    b.HasOne("PreClear.Api.Models.Shipment", null)
+                    b.HasOne("PreClear.Api.Models.Shipment", "Shipment")
                         .WithMany()
                         .HasForeignKey("ShipmentId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_msgs_shipment");
+                        .IsRequired();
+
+                    b.Navigation("Sender");
+
+                    b.Navigation("Shipment");
                 });
 
             modelBuilder.Entity("PreClear.Api.Models.ShipmentPackage", b =>
                 {
-                    b.HasOne("PreClear.Api.Models.Shipment", null)
-                        .WithMany()
+                    b.HasOne("PreClear.Api.Models.Shipment", "Shipment")
+                        .WithMany("Packages")
                         .HasForeignKey("ShipmentId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_packages_shipment");
+                        .IsRequired();
+
+                    b.Navigation("Shipment");
                 });
 
             modelBuilder.Entity("PreClear.Api.Models.ShipmentParty", b =>
                 {
-                    b.HasOne("PreClear.Api.Models.Shipment", null)
+                    b.HasOne("PreClear.Api.Models.Shipment", "Shipment")
+                        .WithMany("Parties")
+                        .HasForeignKey("ShipmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Shipment");
+                });
+
+            modelBuilder.Entity("PreClear.Api.Models.ShipmentProduct", b =>
+                {
+                    b.HasOne("PreClear.Api.Models.ShipmentPackage", "Package")
+                        .WithMany("Products")
+                        .HasForeignKey("PackageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("PreClear.Api.Models.Shipment", "Shipment")
                         .WithMany()
                         .HasForeignKey("ShipmentId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_parties_shipment");
+                        .IsRequired();
+
+                    b.Navigation("Package");
+
+                    b.Navigation("Shipment");
                 });
 
-            modelBuilder.Entity("PreClear.Api.Models.ShipmentService", b =>
+            modelBuilder.Entity("PreClear.Api.Models.ShipperProfile", b =>
                 {
-                    b.HasOne("PreClear.Api.Models.Shipment", null)
-                        .WithOne()
-                        .HasForeignKey("PreClear.Api.Models.ShipmentService", "ShipmentId")
+                    b.HasOne("PreClear.Api.Models.User", "User")
+                        .WithOne("ShipperProfile")
+                        .HasForeignKey("PreClear.Api.Models.ShipperProfile", "UserId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_services_shipment");
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
-            modelBuilder.Entity("PreClear.Api.Models.ShipmentTracking", b =>
+            modelBuilder.Entity("PreClear.Api.Models.Shipment", b =>
                 {
-                    b.HasOne("PreClear.Api.Models.Shipment", null)
-                        .WithMany()
-                        .HasForeignKey("ShipmentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_tracking_shipment");
+                    b.Navigation("Compliance");
+
+                    b.Navigation("Documents");
+
+                    b.Navigation("Packages");
+
+                    b.Navigation("Parties");
+                });
+
+            modelBuilder.Entity("PreClear.Api.Models.ShipmentPackage", b =>
+                {
+                    b.Navigation("Products");
+                });
+
+            modelBuilder.Entity("PreClear.Api.Models.User", b =>
+                {
+                    b.Navigation("BrokerProfile");
+
+                    b.Navigation("ShipperProfile");
                 });
 #pragma warning restore 612, 618
         }

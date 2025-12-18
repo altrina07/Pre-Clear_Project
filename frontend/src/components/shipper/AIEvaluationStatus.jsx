@@ -150,7 +150,7 @@ export function AIEvaluationStatus({ shipment, onNavigate }) {
       });
 
       // 5. Documentation Completeness
-      const requiredDocs = matchingRule?.requiredDocuments || ['Commercial Invoice', 'Packing List', 'Certificate of Origin'];
+      const requiredDocs = matchingRule?.requiredDocuments ?? [];
       const uploadedDocs = shipment.documents.filter((d) => d.uploaded).map((d) => d.name);
       const missingDocs = requiredDocs.filter(doc => !uploadedDocs.includes(doc));
       

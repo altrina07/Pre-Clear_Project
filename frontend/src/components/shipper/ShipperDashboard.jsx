@@ -113,6 +113,9 @@ export function ShipperDashboard({ onNavigate }) {
     if (shipment.status === 'cancelled') return null;
 
     const hasUploadedDocuments = shipment.uploadedDocuments && Object.keys(shipment.uploadedDocuments).length > 0;
+    const aiApproved = shipment.aiApproval === 'approved';
+    const brokerApproved = shipment.brokerApproval === 'approved';
+    const hasToken = shipment.token && shipment.token !== '';
 
     // Draft / Documents requested: show View + Upload/Uploaded
     if (shipment.status === 'draft' || shipment.status === 'document-requested') {
@@ -121,6 +124,9 @@ export function ShipperDashboard({ onNavigate }) {
           <button
             onClick={() => {
               const latest = allShipments.find(s => s.id === shipment.id) || shipment;
+              console.log('[ShipperDashboard] View button clicked (draft/doc-requested) for shipment:', latest);
+              console.log('[ShipperDashboard] - Shipment numeric ID:', latest.id);
+              console.log('[ShipperDashboard] - Shipment reference ID:', latest.referenceId);
               onNavigate('shipment-details', latest);
             }}
             className="px-3 py-1.5 bg-yellow-500 text-yellow-900 rounded-lg hover:bg-yellow-600 hover:shadow-md transition-all text-sm flex items-center gap-1"
@@ -155,14 +161,47 @@ export function ShipperDashboard({ onNavigate }) {
       );
     }
 
-    // If payment pending
-    if (shipment.token && !shipment.paymentStatus) {
+    // Both approvals complete but no token yet: show Generate Token
+    if (aiApproved && brokerApproved && !hasToken) {
+      return (
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              const latest = allShipments.find(s => s.id === shipment.id) || shipment;
+              console.log('[ShipperDashboard] View button clicked (approvals complete) for shipment:', latest);
+              console.log('[ShipperDashboard] - Shipment numeric ID:', latest.id);
+              console.log('[ShipperDashboard] - Shipment reference ID:', latest.referenceId);
+              onNavigate('shipment-details', latest);
+            }}
+            className="px-3 py-1.5 bg-yellow-500 text-yellow-900 rounded-lg hover:bg-yellow-600 hover:shadow-md transition-all text-sm flex items-center gap-1"
+            title="View shipment details"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            View
+          </button>
+          <button
+            onClick={() => {
+              const latest = allShipments.find(s => s.id === shipment.id) || shipment;
+              onNavigate('generate-token', latest);
+            }}
+            className="px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm flex items-center gap-1"
+            title="Generate Pre-Clear Token"
+          >
+            <CheckCircle className="w-3.5 h-3.5" />
+            Generate Token
+          </button>
+        </div>
+      );
+    }
+
+    // Token generated but payment not completed: show Pay Now (no $ symbol for multi-currency)
+    if (hasToken && !shipment.paymentStatus) {
       return (
         <button
           onClick={() => onNavigate('payment', shipment)}
           className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm flex items-center gap-1"
+          title="Proceed to payment"
         >
-          <DollarSign className="w-3.5 h-3.5" />
           Pay Now
         </button>
       );
@@ -174,6 +213,9 @@ export function ShipperDashboard({ onNavigate }) {
         <button
           onClick={() => {
             const latest = allShipments.find(s => s.id === shipment.id) || shipment;
+            console.log('[ShipperDashboard] View button clicked (default) for shipment:', latest);
+            console.log('[ShipperDashboard] - Shipment numeric ID:', latest.id);
+            console.log('[ShipperDashboard] - Shipment reference ID:', latest.referenceId);
             onNavigate('shipment-details', latest);
           }}
           className="px-3 py-1.5 bg-yellow-500 text-yellow-900 rounded-lg hover:bg-yellow-600 hover:shadow-md transition-all text-sm flex items-center gap-1"
@@ -203,7 +245,7 @@ export function ShipperDashboard({ onNavigate }) {
           <table className="w-full">
             <thead>
               <tr style={{ background: '#D4AFA0' }}>
-                <th className="p-4 text-left font-semibold text-sm" style={{ color: '#2F1B17', width: '10%' }}>Shipment ID</th>
+                <th className="p-4 text-left font-semibold text-sm" style={{ color: '#2F1B17', width: '10%' }}>Reference ID</th>
                 <th className="p-4 text-left font-semibold text-sm" style={{ color: '#2F1B17', width: '12%' }}>Title</th>
                 <th className="p-4 text-left font-semibold text-sm" style={{ color: '#2F1B17', width: '14%' }}>Origin → Destination</th>
                 <th className="p-4 text-left font-semibold text-sm" style={{ color: '#2F1B17', width: '11%' }}>Value</th>
@@ -222,17 +264,17 @@ export function ShipperDashboard({ onNavigate }) {
 
                 return (
                   <tr key={shipment.id} className={`${isEvenRow ? 'bg-white' : 'bg-slate-50'} hover:bg-slate-100` }>
-                    <td className="p-4 text-slate-900 font-semibold text-sm">#{shipment.id}</td>
+                    <td className="p-4 text-slate-900 font-semibold text-sm">{shipment.referenceId || `#${shipment.id}`}</td>
                     <td className="p-4 text-slate-900 text-sm">
                       <div className="max-w-[150px] truncate">{shipment.title || shipment.productName}</div>
                     </td>
                     <td className="p-4 text-slate-900 text-sm">
-                      <div className="text-sm"><strong>{shipment.shipper?.city || shipment.shipper?.company || 'N/A'}</strong> → <strong>{shipment.consignee?.city || shipment.consignee?.company || 'N/A'}</strong></div>
-                      <div className="text-xs text-slate-500 mt-1">{(shipment.mode || 'N/A')} • {shipment.shipmentType || 'N/A'}</div>
+                      <div className="text-sm"><strong>{shipment.shipper?.city || shipment.shipper?.company || ''}</strong> → <strong>{shipment.consignee?.city || shipment.consignee?.company || ''}</strong></div>
+                      <div className="text-xs text-slate-500 mt-1">{shipment.mode || ''} • {shipment.shipmentType || ''}</div>
                     </td>
-                    <td className="p-4 text-slate-900 font-medium text-sm">{formatCurrency(shipment.value || 0, shipment.currency || currency.code)}</td>
+                    <td className="p-4 text-slate-900 font-medium text-sm">{shipment.value != null ? formatCurrency(shipment.value, shipment.currency || currency.code) : ''}</td>
                     <td className="p-4">
-                      {aiScore > 0 ? (
+                      {aiScore != null ? (
                         <div className="flex items-center gap-2">
                           <div className="w-16 h-2 bg-slate-200 rounded-full overflow-hidden">
                             <div
@@ -243,7 +285,7 @@ export function ShipperDashboard({ onNavigate }) {
                           <span className={`${aiScore >= 85 ? 'text-green-700' : aiScore >= 70 ? 'text-amber-700' : 'text-red-700'} text-sm font-semibold`}>{aiScore}%</span>
                         </div>
                       ) : (
-                        <span className="text-slate-400 text-sm">-</span>
+                        <span className="text-slate-400 text-sm"></span>
                       )}
                     </td>
                     <td className="p-4">{getStatusBadge(shipment)}</td>

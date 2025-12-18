@@ -46,7 +46,7 @@ export function PreClearForm({ onSubmit }: PreClearFormProps) {
         extractedMeaning: 'Consumer electronics device for audio playback with wireless connectivity capabilities',
         tariffDefinition: 'Headphones and earphones, whether or not combined with a microphone',
         restrictedItems: [],
-        requiredDocs: ['Commercial Invoice', 'Certificate of Origin', 'MSDS', 'Packing List'],
+        requiredDocs: [],
         sanctionsStatus: 'Clear',
         estimatedDuty: 2.5,
         estimatedVAT: 18,

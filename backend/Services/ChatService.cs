@@ -34,11 +34,13 @@ namespace PreClear.Api.Services
         {
             if (string.IsNullOrWhiteSpace(message))
                 throw new ArgumentException("message is required", nameof(message));
+            if (!senderId.HasValue)
+                throw new ArgumentException("sender_id is required", nameof(senderId));
 
             var msg = new ShipmentMessage
             {
                 ShipmentId = shipmentId,
-                SenderId = senderId,
+                SenderId = senderId.Value,
                 Message = message,
                 CreatedAt = DateTime.UtcNow
             };

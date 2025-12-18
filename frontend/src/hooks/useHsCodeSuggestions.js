@@ -28,9 +28,15 @@ export function useHsCodeSuggestions({ name, category, description, delay = 700,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, category, description, k })
         });
-        if (!resp.ok) throw new Error('failed');
+        if (!resp.ok) throw new Error('API error: ' + resp.status);
         const body = await resp.json();
-        const items = (body.suggestions || []).map(s => ({ code: s.hscode || s.code, description: s.description || '', score: s.score || 0 }));
+        const suggestions = body?.suggestions;
+        if (!Array.isArray(suggestions)) {
+          console.warn('Invalid HS suggestions response:', body);
+          setSuggestions([]);
+          return;
+        }
+        const items = suggestions.map(s => ({ code: s.hscode || s.code, description: s.description || '', score: s.score || 0 }));
         setSuggestions(items);
       } catch (err) {
         setError(err.message || 'error');

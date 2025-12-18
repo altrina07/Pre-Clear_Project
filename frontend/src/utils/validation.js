@@ -163,9 +163,17 @@ export async function suggestHSCode(productName, productDescription, category) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: productName || '', category: category || '', description: productDescription || '', k: 5 })
     });
-    if (!resp.ok) return [];
+    if (!resp.ok) {
+      console.error('HS suggest API returned', resp.status);
+      return [];
+    }
     const body = await resp.json();
-    const items = (body.suggestions || []).map(s => ({ code: s.hscode || s.code, description: s.description || '', score: s.score || 0 }));
+    const suggestions = body?.suggestions;
+    if (!Array.isArray(suggestions)) {
+      console.error('HS suggest API returned invalid format:', body);
+      return [];
+    }
+    const items = suggestions.map(s => ({ code: s.hscode || s.code, description: s.description || '', score: s.score || 0 }));
     return items;
   } catch (err) {
     console.error('HS suggest call failed', err);

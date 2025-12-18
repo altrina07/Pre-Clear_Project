@@ -1,6 +1,9 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using PreClear.Api.Interfaces;
@@ -10,6 +13,7 @@ namespace PreClear.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize] // SECURITY: Require authentication for all chat endpoints
     public class ChatController : ControllerBase
     {
         private readonly IChatService _chatService;
@@ -19,6 +23,12 @@ namespace PreClear.Api.Controllers
         {
             _chatService = chatService;
             _logger = logger;
+        }
+
+        private long GetUserId()
+        {
+            var claim = User.FindFirst(ClaimTypes.NameIdentifier);
+            return long.TryParse(claim?.Value, out var id) ? id : 0;
         }
 
         [HttpGet("shipments/{shipmentId}/messages")]
@@ -44,7 +54,12 @@ namespace PreClear.Api.Controllers
                 return BadRequest(new { error = "message is required" });
             }
 
-            var msg = await _chatService.SendMessageAsync(shipmentId, request.SenderId, request.Message);
+            // SECURITY: Extract SenderId from JWT claims, not client input
+            var senderId = GetUserId();
+            if (senderId == 0)
+                return Unauthorized(new { error = "invalid_token" });
+
+            var msg = await _chatService.SendMessageAsync(shipmentId, senderId, request.Message);
 
             var dto = new ShipmentMessageDto
             {
@@ -55,13 +70,13 @@ namespace PreClear.Api.Controllers
                 CreatedAt = msg.CreatedAt
             };
 
-            _logger.LogInformation("User {Sender} sent message {MessageId} on shipment {Shipment}", request.SenderId, msg.Id, shipmentId);
+            _logger.LogInformation("User {Sender} sent message {MessageId} on shipment {Shipment}", senderId, msg.Id, shipmentId);
             return CreatedAtAction(nameof(GetMessages), new { shipmentId = shipmentId }, dto);
         }
 
         public class SendMessageRequest
         {
-            public long? SenderId { get; set; }
+            // SECURITY: SenderId REMOVED - extract from JWT claims only
             public string Message { get; set; } = string.Empty;
         }
 

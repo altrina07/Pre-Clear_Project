@@ -7,9 +7,10 @@ namespace PreClear.Api.Interfaces
 {
     public interface IDocumentService
     {
-        Task<ShipmentDocument> UploadAsync(long shipmentId, long? uploadedBy, string originalFileName, Stream content, DocumentType docType);
+        Task<ShipmentDocument> UploadAsync(long shipmentId, long? uploadedBy, string originalFileName, Stream content, string docType);
         Task<System.Collections.Generic.List<ShipmentDocument>> GetByShipmentIdAsync(long shipmentId);
         Task<(ShipmentDocument?, string?)> GetDocumentAsync(long id);
+        Task<bool> MarkAsUploadedAsync(long shipmentId, string documentName);
     }
 }
  

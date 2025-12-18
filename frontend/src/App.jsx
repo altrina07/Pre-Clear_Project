@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route, useNavigate, useParams, useLocation, Navigate } from "react-router-dom";
+import { getShipmentById } from "./api/shipments";
 import { HomePage } from "./components/HomePage";
 import { LoginPage } from "./components/LoginPage";
 import { SignupPage } from "./components/SignupPage";
@@ -41,31 +43,95 @@ import { UserManagement } from "./components/admin/UserManagement";
 import { SystemConfig } from "./components/admin/SystemConfig";
 import { AIRulesMonitoring } from "./components/admin/AIRulesMonitoring";
 import { ShipmentTracking } from "./components/admin/ShipmentTracking";
+import { clearAuthToken } from "./api/http";
+import { shipmentsStore } from "./store/shipmentsStore";
 
-function AppContent() {
+function AppShell() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState("");
   const [currentPage, setCurrentPage] = useState("home");
   const [currentShipment, setCurrentShipment] = useState(null);
+  const navigate = useNavigate();
+  const { id: shipmentIdFromRoute } = useParams();
+  const location = useLocation();
 
   const handleLogin = (role) => {
+    // Fresh session: ensure local state is clean and then navigate
+    shipmentsStore.clearShipments();
     setUserRole(role);
     setIsLoggedIn(true);
     setCurrentPage("dashboard");
   };
 
   const handleLogout = () => {
+    // Clear auth + shipment state when logging out
+    try { clearAuthToken(); } catch {}
+    try { localStorage.removeItem('pc_userId'); } catch {}
+    shipmentsStore.clearShipments();
     setIsLoggedIn(false);
     setUserRole("");
-    setCurrentPage("home");
+    setCurrentPage("login");
     setCurrentShipment(null);
   };
 
+  // Global unauthorized handling: listen for JWT failures and force login
+  useEffect(() => {
+    const onUnauthorized = () => {
+      try { clearAuthToken(); } catch {}
+      try { localStorage.removeItem('pc_userId'); } catch {}
+      shipmentsStore.clearShipments();
+      setIsLoggedIn(false);
+      setUserRole("");
+      setCurrentPage("login");
+    };
+    window.addEventListener('pc-auth:unauthorized', onUnauthorized);
+    return () => window.removeEventListener('pc-auth:unauthorized', onUnauthorized);
+  }, []);
+
+  // Handle direct access to /shipments/:id route
+  useEffect(() => {
+    if (shipmentIdFromRoute && isLoggedIn && userRole === 'shipper') {
+      console.log('[AppShell] Direct route to /shipments/' + shipmentIdFromRoute);
+      setCurrentPage('shipment-details');
+      // Fetch shipment data in background
+      const shipmentFromNav = location.state?.shipment;
+      if (!shipmentFromNav) {
+        const fetchShipment = async () => {
+          try {
+            const data = await getShipmentById(shipmentIdFromRoute);
+            const extractedShipment = data?.Shipment || data?.shipment || data;
+            setCurrentShipment(extractedShipment);
+          } catch (err) {
+            console.error('[AppShell] Error fetching shipment:', err);
+          }
+        };
+        fetchShipment();
+      } else {
+        setCurrentShipment(shipmentFromNav);
+      }
+    }
+  }, [shipmentIdFromRoute, isLoggedIn, userRole, location.state?.shipment]);
+
   const handleNavigate = (page, data) => {
-    setCurrentPage(page);
+    console.log('[App.handleNavigate] Called with:', { page, data });
+    console.log('[App.handleNavigate] - data.id:', data?.id);
+    console.log('[App.handleNavigate] - data.Id:', data?.Id);
+    console.log('[App.handleNavigate] - data.referenceId:', data?.referenceId);
+    console.log('[App.handleNavigate] - data.reference_id:', data?.reference_id);
+    
     if (data) {
       setCurrentShipment(data);
     }
+
+    // Route shipment details to URL-based route with id param
+    if (page === "shipment-details" && data?.id) {
+      console.log('[App.handleNavigate] Navigating to /shipments/' + data.id);
+      navigate(`/shipments/${data.id}`, { state: { shipment: data } });
+      return;
+    }
+
+    console.log('[App.handleNavigate] Setting currentPage to:', page);
+    setCurrentPage(page);
   };
 
   const renderShipperPage = () => {
@@ -262,7 +328,13 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/shipments/:id" element={<AppShell />} />
+          <Route path="/*" element={<AppShell />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
     </AuthProvider>
   );
 }

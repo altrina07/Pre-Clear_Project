@@ -50,16 +50,8 @@ export function AICompliance({ shipmentData, onComplete }: AIComplianceProps) {
           sanctionsStatus: 'Clear - No sanctions matches found'
         },
         documents: {
-          required: [
-            { name: 'Certificate of Origin', status: 'missing' },
-            { name: 'Commercial Invoice', status: 'missing' },
-            { name: 'MSDS (Material Safety Data Sheet)', status: 'missing' },
-            { name: 'Packing List', status: 'missing' }
-          ],
-          optional: [
-            { name: 'FCC Certificate', status: 'recommended' },
-            { name: 'Product Specifications', status: 'recommended' }
-          ]
+          required: [],
+          optional: []
         },
         duties: {
           customsDuty: 2.5,

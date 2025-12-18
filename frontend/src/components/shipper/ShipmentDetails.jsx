@@ -22,6 +22,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useShipments } from '../../hooks/useShipments';
+import { getShipmentById, pollShipmentStatus, submitAi, updateShipmentStatus as apiUpdateShipmentStatus, generateToken as apiGenerateToken } from '../../api/shipments';
 import { ShipmentChatPanel } from '../ShipmentChatPanel';
 import { shipmentsStore } from '../../store/shipmentsStore';
 import { getCurrencyByCountry, formatCurrency } from '../../utils/validation';
@@ -36,9 +37,11 @@ const formatTimeWithAmPm = (timeString) => {
   return `${displayHour}:${minutes} ${ampm}`;
 };
 
-export function ShipmentDetails({ shipment, onNavigate }) {
+export function ShipmentDetails({ shipment, onNavigate, loadingOverride = false, errorOverride = null }) {
   const { updateShipmentStatus, updateAIApproval, requestBrokerApproval, uploadDocument } = useShipments();
-  const [currentShipment, setCurrentShipment] = useState(shipment);
+  const [currentShipment, setCurrentShipment] = useState(null);
+  const [isLoading, setIsLoading] = useState(!!loadingOverride);
+  const [error, setError] = useState(errorOverride);
   const [chatOpen, setChatOpen] = useState(false);
   const [viewingDocument, setViewingDocument] = useState(null);
   const [uploadingDocKey, setUploadingDocKey] = useState(null);
@@ -48,64 +51,121 @@ export function ShipmentDetails({ shipment, onNavigate }) {
   const [resubmittingToBroker, setResubmittingToBroker] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   
-  // Get currency based on origin country
-  const currency = getCurrencyByCountry(currentShipment.originCountry || 'US');
-  
-  // Refresh shipment data and listen for real-time updates
+  // Initialize from props and set loading state
+  // Sync loading/error overrides from parent route
   useEffect(() => {
-    const updatedShipment = shipmentsStore.getShipmentById(shipment.id);
-    if (updatedShipment) {
-      const wasNotToken = currentShipment.status !== 'token-generated';
-      const isNowToken = updatedShipment.status === 'token-generated';
-      
-      setCurrentShipment(updatedShipment);
-      
-      // Show notification when token is generated
-      if (wasNotToken && isNowToken && updatedShipment.token) {
-        setShowTokenNotification(true);
-        setTimeout(() => setShowTokenNotification(false), 5000);
-      }
+    setIsLoading(!!loadingOverride);
+  }, [loadingOverride]);
+
+  useEffect(() => {
+    if (errorOverride) {
+      setError(errorOverride);
     }
-  }, [shipment.id]);
-  
-  // Subscribe to real-time updates
+  }, [errorOverride]);
+
+  // Initialize shipment by fetching from backend (DB is source of truth)
   useEffect(() => {
-    const unsubscribe = shipmentsStore.subscribe(() => {
-      const updatedShipment = shipmentsStore.getShipmentById(shipment.id);
-      if (updatedShipment) {
-        const wasNotToken = currentShipment.status !== 'token-generated';
-        const isNowToken = updatedShipment.status === 'token-generated';
-        
-        setCurrentShipment(updatedShipment);
-        
-        // Show notification when token is generated
-        if (wasNotToken && isNowToken && updatedShipment.token) {
-          setShowTokenNotification(true);
-          setTimeout(() => setShowTokenNotification(false), 5000);
+    if (loadingOverride) return;
+    let cancelled = false;
+
+    const init = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        if (shipment?.id) {
+          const data = await getShipmentById(shipment.id);
+          // API returns ShipmentDetailDto; use the Shipment payload directly for UI
+          const s = data?.shipment || data?.Shipment || null;
+          if (!cancelled) {
+            setCurrentShipment(s);
+            setIsLoading(false);
+          }
+        } else {
+          if (!cancelled) {
+            setCurrentShipment(null);
+            setIsLoading(false);
+            setError('Shipment data not available');
+          }
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e?.message || 'Failed to load shipment');
+          setIsLoading(false);
         }
       }
-    });
-    
-    return () => unsubscribe();
-  }, [shipment.id, currentShipment.status]);
+    };
 
-  // Required documents - map from shipment.documents selected
+    init();
+    return () => { cancelled = true; };
+  }, [shipment?.id, loadingOverride]);
+  
+  // currency/approval normalization moved below hard guard
+  
+  // Poll backend while approvals are pending
+  useEffect(() => {
+    if (!currentShipment?.id) return;
+    let intervalId;
+
+    const shouldPoll = (s) => s?.AiApprovalStatus === 'pending' || s?.BrokerApprovalStatus === 'pending' || s?.aiApprovalStatus === 'pending' || s?.brokerApprovalStatus === 'pending' || s?.status === 'ai-review';
+
+    const poll = async () => {
+      try {
+        const status = await pollShipmentStatus(currentShipment.id);
+        setCurrentShipment(prev => ({ ...(prev || {}),
+          Status: status.status,
+          status: status.status,
+          AiApprovalStatus: status.aiApprovalStatus,
+          aiApprovalStatus: status.aiApprovalStatus,
+          BrokerApprovalStatus: status.brokerApprovalStatus,
+          brokerApprovalStatus: status.brokerApprovalStatus,
+          PreclearToken: status.preclearToken,
+          preclearToken: status.preclearToken,
+          AiComplianceScore: status.aiComplianceScore,
+          aiComplianceScore: status.aiComplianceScore,
+        }));
+      } catch { /* ignore transient poll errors */ }
+    };
+
+    if (shouldPoll(currentShipment)) {
+      poll();
+      intervalId = setInterval(poll, 3000);
+    }
+
+    return () => { if (intervalId) clearInterval(intervalId); };
+  }, [currentShipment?.id, currentShipment?.AiApprovalStatus, currentShipment?.BrokerApprovalStatus, currentShipment?.status]);
+
+  // aiProcessing effect moved below guard after aiApproval is defined
+
+  // Required documents - use shipment.documents (populated by model) when available
   const [documents, setDocuments] = useState(() => {
-    const shipmentDocs = currentShipment?.documents || {};
+    const shipmentDocs = currentShipment?.documents || [];
     const uploadedDocs = currentShipment?.uploadedDocuments || {};
-    const documentsList = [
-      { name: 'Commercial Invoice', key: 'commercialInvoice', uploaded: uploadedDocs.commercialInvoice?.uploaded || false, fileName: uploadedDocs.commercialInvoice?.name || '', required: true },
-      { name: 'Packing List', key: 'packingList', uploaded: uploadedDocs.packingList?.uploaded || false, fileName: uploadedDocs.packingList?.name || '', required: true },
-      { name: 'Certificate of Origin', key: 'certificateOfOrigin', uploaded: uploadedDocs.certificateOfOrigin?.uploaded || false, fileName: uploadedDocs.certificateOfOrigin?.name || '', required: false },
-      { name: 'Export License', key: 'exportLicense', uploaded: uploadedDocs.exportLicense?.uploaded || false, fileName: uploadedDocs.exportLicense?.name || '', required: false },
-      { name: 'Import License', key: 'importLicense', uploaded: uploadedDocs.importLicense?.uploaded || false, fileName: uploadedDocs.importLicense?.name || '', required: false },
-      { name: 'Safety Data Sheet (SDS)', key: 'sds', uploaded: uploadedDocs.sds?.uploaded || false, fileName: uploadedDocs.sds?.name || '', required: false },
-      // Airway Bill (AWB) intentionally removed per policy — handled outside model-driven required documents
-      { name: 'Bill of Lading (BOL)', key: 'bol', uploaded: uploadedDocs.bol?.uploaded || false, fileName: uploadedDocs.bol?.name || '', required: false },
-      { name: 'CMR (International Road Transport)', key: 'cmr', uploaded: uploadedDocs.cmr?.uploaded || false, fileName: uploadedDocs.cmr?.name || '', required: false },
-    ];
-    // Filter to show only selected documents
-    return documentsList.filter(d => shipmentDocs[d.key]);
+
+    if (Array.isArray(shipmentDocs) && shipmentDocs.length > 0) {
+      return shipmentDocs.map((d, idx) => {
+        const key = d.key || (d.name || `doc_${idx}`).toString().replace(/\s+/g, '').toLowerCase();
+        return {
+          name: d.name || d,
+          key,
+          uploaded: uploadedDocs[key]?.uploaded || false,
+          fileName: uploadedDocs[key]?.name || '',
+          required: d.required ?? true
+        };
+      });
+    }
+
+    // If documents is an object of flags (legacy), convert to array
+    if (shipmentDocs && typeof shipmentDocs === 'object' && !Array.isArray(shipmentDocs)) {
+      return Object.keys(shipmentDocs).filter(k => shipmentDocs[k]).map(k => ({
+        name: k,
+        key: k,
+        uploaded: uploadedDocs[k]?.uploaded || false,
+        fileName: uploadedDocs[k]?.name || '',
+        required: true
+      }));
+    }
+
+    return [];
   });
 
   // Handle file selection and upload for a document
@@ -197,32 +257,46 @@ export function ShipmentDetails({ shipment, onNavigate }) {
     }, 2000);
   };
 
-  const handleRequestAIEvaluation = () => {
-    setAiProcessing(true);
-    setTimeout(() => {
-      updateAIApproval(currentShipment.id, 'approved');
-      const updated = shipmentsStore.getShipmentById(currentShipment.id);
-      setCurrentShipment(updated);
+  const handleRequestAIEvaluation = async () => {
+    if (!currentShipment?.id) return;
+    try {
+      setAiProcessing(true);
+      await submitAi(currentShipment.id);
+      const data = await getShipmentById(currentShipment.id);
+      const s = data?.shipment || data?.Shipment;
+      setCurrentShipment(s);
+    } catch (e) {
+      setError(e?.message || 'Failed to submit AI review');
+    } finally {
       setAiProcessing(false);
-    }, 3000);
+    }
   };
 
-  const handleRequestBrokerApproval = () => {
-    setRequestingBroker(true);
-    setTimeout(() => {
-      requestBrokerApproval(currentShipment.id);
-      const updated = shipmentsStore.getShipmentById(currentShipment.id);
-      if (updated) {
-        setCurrentShipment(updated);
-      }
+  const handleRequestBrokerApproval = async () => {
+    if (!currentShipment?.id) return;
+    try {
+      setRequestingBroker(true);
+      await apiUpdateShipmentStatus(currentShipment.id, 'awaiting-broker');
+      const data = await getShipmentById(currentShipment.id);
+      const s = data?.shipment || data?.Shipment;
+      setCurrentShipment(s);
+    } catch (e) {
+      setError(e?.message || 'Failed to request broker review');
+    } finally {
       setRequestingBroker(false);
-    }, 2000);
+    }
   };
 
-  const handleGenerateToken = () => {
-    updateShipmentStatus(currentShipment.id, 'token-generated');
-    const updated = shipmentsStore.getShipmentById(currentShipment.id);
-    setCurrentShipment(updated);
+  const handleGenerateToken = async () => {
+    if (!currentShipment?.id) return;
+    try {
+      await apiGenerateToken(currentShipment.id);
+      const data = await getShipmentById(currentShipment.id);
+      const s = data?.shipment || data?.Shipment;
+      setCurrentShipment(s);
+    } catch (e) {
+      setError(e?.message || 'Failed to generate token');
+    }
   };
 
   const handleCancelShipment = () => {
@@ -239,11 +313,35 @@ export function ShipmentDetails({ shipment, onNavigate }) {
     });
   };
 
+  // Derive approval status fields EARLY - BEFORE they are used in computed state below
+  // This prevents temporal dead zone errors from referencing them before declaration
+  const aiApproval =
+    currentShipment?.aiApprovalStatus ??
+    currentShipment?.AiApprovalStatus ??
+    'not-started';
+
+  const brokerApproval =
+    currentShipment?.brokerApprovalStatus ??
+    currentShipment?.BrokerApprovalStatus ??
+    'not-started';
+
+  const tokenVal =
+    currentShipment?.token ??
+    currentShipment?.PreclearToken ??
+    currentShipment?.preclearToken ??
+    null;
+
   const allRequiredDocsUploaded = documents.filter(d => d.required).every(d => d.uploaded);
-  const canRequestAI = allRequiredDocsUploaded && currentShipment.aiApproval !== 'approved';
-  const canRequestBroker = currentShipment.aiApproval === 'approved' && 
-    (currentShipment.brokerApproval === 'not-started' || !currentShipment.brokerApproval);
-  const canGenerateToken = currentShipment.brokerApproval === 'approved';
+  const canRequestAI = currentShipment && allRequiredDocsUploaded && (aiApproval !== 'approved');
+  const canRequestBroker = currentShipment && aiApproval === 'approved' && 
+    (brokerApproval === 'not-started' || !brokerApproval);
+  // Token section should be visible when both approvals are complete
+  // or when a token has already been generated/present on the shipment.
+  const canGenerateToken = !!currentShipment && (
+    (aiApproval === 'approved' && brokerApproval === 'approved') ||
+    currentShipment?.status === 'token-generated' ||
+    !!tokenVal
+  );
 
   // Keep documents in sync if shipment updates (e.g., after upload)
   useEffect(() => {
@@ -263,6 +361,55 @@ export function ShipmentDetails({ shipment, onNavigate }) {
     setDocuments(documentsList.filter(d => shipmentDocs[d.key]));
   }, [currentShipment]);
 
+  // Reflect backend AI running state based on currentShipment
+  useEffect(() => {
+    if (!currentShipment) return;
+    const running = aiApproval === 'pending' || currentShipment.status === 'ai-review';
+    console.log(
+      '[ShipmentDetails] aiProcessing effect:',
+      { aiApproval, status: currentShipment.status, running }
+    );
+    setAiProcessing(!!running);
+  }, [currentShipment, aiApproval]);
+
+  // HARD GUARD: If shipment is null, do not render anything that accesses it
+  if (!currentShipment) {
+    console.log('[ShipmentDetails] HARD GUARD triggered: currentShipment is null/undefined');
+    console.log('[ShipmentDetails] isLoading:', isLoading);
+    console.log('[ShipmentDetails] error:', error);
+    console.log('[ShipmentDetails] shipment prop:', shipment);
+    console.log('[ShipmentDetails] routeId:', routeId);
+    
+    // Show error if there's one
+    if (error && !isLoading) {
+      return (
+        <div className="flex flex-col items-center justify-center py-12 px-6">
+          <AlertTriangle className="w-12 h-12 text-red-500 mb-4" />
+          <h2 className="text-xl font-semibold text-slate-900 mb-2">Failed to Load Shipment</h2>
+          <p className="text-slate-600 mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+    
+    // Show loading
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader className="w-8 h-8 text-blue-600 animate-spin" />
+        <span className="ml-3 text-slate-600">Loading shipment details...</span>
+      </div>
+    );
+  }
+
+  // After guard: safe to access shipment fields directly without optional chaining
+  const shipmentData = currentShipment;
+  const currency = getCurrencyByCountry(shipmentData.originCountry || 'US');
+
   return (
     <div>
       {/* Header */}
@@ -270,7 +417,7 @@ export function ShipmentDetails({ shipment, onNavigate }) {
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-slate-900 mb-2">Shipment Details</h1>
-            <p className="text-slate-600">Complete shipment ID: {currentShipment.id}</p>
+            {/* <p className="text-slate-600">Complete shipment ID: {shipmentData.id}</p> */}
           </div>
           <button
             onClick={() => setChatOpen(true)}
@@ -289,48 +436,26 @@ export function ShipmentDetails({ shipment, onNavigate }) {
           {/* Step 1: Documents */}
           <div className="flex-1">
             <div className={`w-full h-2 rounded-full ${allRequiredDocsUploaded ? 'bg-green-500' : 'bg-orange-500'}`} />
-            <p className="text-sm text-slate-600 mt-2">Documents Upload</p>
+            <p className="text-sm text-slate-600 mt-2">Documents</p>
             <p className="text-xs text-slate-500">{allRequiredDocsUploaded ? 'Complete' : 'Pending'}</p>
           </div>
-          
           {/* Step 2: AI Approval */}
           <div className="flex-1">
-            <div className={`w-full h-2 rounded-full ${
-              currentShipment.aiApproval === 'approved' ? 'bg-green-500' : 
-              aiProcessing ? 'bg-blue-500' : 'bg-slate-200'
-            }`} />
+            <div className={`w-full h-2 rounded-full ${aiApproval === 'approved' ? 'bg-green-500' : aiProcessing ? 'bg-blue-500' : 'bg-slate-200'}`} />
             <p className="text-sm text-slate-600 mt-2">AI Evaluation</p>
-            <p className="text-xs text-slate-500">
-              {currentShipment.aiApproval === 'approved' ? 'Approved' : aiProcessing ? 'Processing...' : 'Not Started'}
-            </p>
+            <p className="text-xs text-slate-500">{aiApproval === 'approved' ? 'Approved' : aiApproval === 'pending' || aiProcessing ? 'Evaluating...' : 'Not Started'}</p>
           </div>
-          
           {/* Step 3: Broker Approval */}
           <div className="flex-1">
-            <div className={`w-full h-2 rounded-full ${
-              currentShipment.brokerApproval === 'approved' ? 'bg-green-500' : 
-              currentShipment.brokerApproval === 'pending' ? 'bg-blue-500' : 
-              currentShipment.brokerApproval === 'documents-requested' ? 'bg-red-500' :
-              'bg-slate-200'
-            }`} />
+            <div className={`w-full h-2 rounded-full ${brokerApproval === 'approved' ? 'bg-green-500' : brokerApproval === 'pending' ? 'bg-blue-500' : brokerApproval === 'documents-requested' ? 'bg-red-500' : 'bg-slate-200'}`} />
             <p className="text-sm text-slate-600 mt-2">Broker Review</p>
-            <p className="text-xs text-slate-500">
-              {currentShipment.brokerApproval === 'approved' ? 'Approved' : 
-               currentShipment.brokerApproval === 'pending' ? 'In Review' :
-               currentShipment.brokerApproval === 'documents-requested' ? 'Docs Needed' :
-               'Not Started'}
-            </p>
+            <p className="text-xs text-slate-500">{brokerApproval === 'approved' ? 'Approved' : brokerApproval === 'pending' ? 'In Review' : brokerApproval === 'documents-requested' ? 'Docs Needed' : 'Not Started'}</p>
           </div>
-          
           {/* Step 4: Token */}
           <div className="flex-1">
-            <div className={`w-full h-2 rounded-full ${
-              currentShipment.status === 'token-generated' ? 'bg-green-500' : 'bg-slate-200'
-            }`} />
-            <p className="text-sm text-slate-600 mt-2">Token Generated</p>
-            <p className="text-xs text-slate-500">
-              {currentShipment.status === 'token-generated' ? 'Complete' : 'Pending'}
-            </p>
+            <div className={`w-full h-2 rounded-full ${currentShipment?.status === 'token-generated' ? 'bg-green-500' : 'bg-slate-200'}`} />
+            <p className="text-sm text-slate-600 mt-2">Token</p>
+            <p className="text-xs text-slate-500">{currentShipment?.status === 'token-generated' ? 'Complete' : 'Pending'}</p>
           </div>
         </div>
       </div>
@@ -338,48 +463,47 @@ export function ShipmentDetails({ shipment, onNavigate }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column - Main Workflow */}
         <div className="lg:col-span-2 space-y-6">
-          
+                    
           {/* Comprehensive Shipment Details */}
           <div className="bg-white rounded-xl border border-slate-200 p-6">
             <h2 className="text-slate-900 mb-6">Shipment Details</h2>
-            
+                    {/* <p className="text-slate-900">{shipmentData.consignee?.contactName || 'N/A'}</p> */}
             {/* Basics Section */}
             <div className="mb-8 pb-6 border-b border-slate-200">
               <h3 className="text-slate-900 font-semibold mb-4">Shipment Basics</h3>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Title</p>
-                  <p className="text-slate-900">{currentShipment.title || 'N/A'}</p>
+                  <p className="text-slate-900">{shipmentData.title || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Mode</p>
-                  <p className="text-slate-900">{currentShipment.mode || 'N/A'}</p>
+                  <p className="text-slate-900">{shipmentData.mode || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Shipment Type</p>
-                  <p className="text-slate-900">{currentShipment.shipmentType || 'N/A'}</p>
+                  <p className="text-slate-900">{shipmentData.shipmentType || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Service Level</p>
-                  <p className="text-slate-900">{currentShipment.serviceLevel || 'N/A'}</p>
+                  <p className="text-slate-900">{shipmentData.serviceLevel || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Currency</p>
-                  <p className="text-slate-900">{currentShipment.currency || currency.code}</p>
+                  <p className="text-slate-900">{shipmentData.currency || currency?.code || 'USD'}</p>
                 </div>
-
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Pickup</p>
-                  <p className="text-slate-900">{currentShipment.pickupType || 'N/A'}</p>
-                  {currentShipment.pickupType === 'Drop-off' && currentShipment.estimatedDropoffDate && (
-                    <p className="text-xs text-slate-500 mt-1">Estimated Drop-off: {new Date(currentShipment.estimatedDropoffDate).toLocaleDateString()}</p>
+                  <p className="text-slate-900">{shipmentData.pickupType || 'N/A'}</p>
+                  {shipmentData.pickupType === 'Drop-off' && shipmentData.estimatedDropoffDate && (
+                    <p className="text-xs text-slate-500 mt-1">Estimated Drop-off: {new Date(shipmentData.estimatedDropoffDate).toLocaleDateString()}</p>
                   )}
-                  {currentShipment.pickupType === 'Scheduled Pickup' && (
+                  {shipmentData.pickupType === 'Scheduled Pickup' && (
                     <div className="text-xs text-slate-500 mt-1">
-                      {currentShipment.pickupLocation && <div>Location: {currentShipment.pickupLocation}</div>}
-                      {currentShipment.pickupDate && <div>Pickup Date: {new Date(currentShipment.pickupDate).toLocaleDateString()}</div>}
-                      {(currentShipment.pickupTimeEarliest || currentShipment.pickupTimeLatest) && (
-                        <div>Time: {formatTimeWithAmPm(currentShipment.pickupTimeEarliest)} — {formatTimeWithAmPm(currentShipment.pickupTimeLatest)}</div>
+                      {shipmentData.pickupLocation && <div>Location: {shipmentData.pickupLocation}</div>}
+                      {shipmentData.pickupDate && <div>Pickup Date: {new Date(shipmentData.pickupDate).toLocaleDateString()}</div>}
+                      {(shipmentData.pickupTimeEarliest || shipmentData.pickupTimeLatest) && (
+                        <div>Time: {formatTimeWithAmPm(shipmentData.pickupTimeEarliest)} — {formatTimeWithAmPm(shipmentData.pickupTimeLatest)}</div>
                       )}
                     </div>
                   )}
@@ -393,29 +517,29 @@ export function ShipmentDetails({ shipment, onNavigate }) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Company</p>
-                  <p className="text-slate-900">{currentShipment.shipper?.company || 'N/A'}</p>
+                  <p className="text-slate-900">{shipmentData.shipper?.company || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Contact Name</p>
-                  <p className="text-slate-900">{currentShipment.shipper?.contactName || 'N/A'}</p>
+                  <p className="text-slate-900">{shipmentData.shipper?.contactName || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Email</p>
-                  <p className="text-slate-900">{currentShipment.shipper?.email || 'N/A'}</p>
+                  <p className="text-slate-900">{shipmentData.shipper?.email || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Phone</p>
-                  <p className="text-slate-900">{currentShipment.shipper?.phone || 'N/A'}</p>
+                  <p className="text-slate-900">{shipmentData.shipper?.phone || 'N/A'}</p>
                 </div>
                 <div className="col-span-2">
                   <p className="text-slate-500 text-sm mb-1">Address</p>
                   <p className="text-slate-900">
-                    {currentShipment.shipper?.address1}{currentShipment.shipper?.address2 ? ` ${currentShipment.shipper.address2}` : ''}, {currentShipment.shipper?.city}, {currentShipment.shipper?.state} {currentShipment.shipper?.postalCode}
+                    {[shipmentData.shipper?.address1, shipmentData.shipper?.address2].filter(Boolean).join(' ')}, {shipmentData.shipper?.city}, {shipmentData.shipper?.state} {shipmentData.shipper?.postalCode}
                   </p>
                 </div>
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Country</p>
-                  <p className="text-slate-900">{currentShipment.shipper?.country || 'N/A'}</p>
+                  <p className="text-slate-900">{shipmentData.shipper?.country || 'N/A'}</p>
                 </div>
                 
               </div>
@@ -427,29 +551,29 @@ export function ShipmentDetails({ shipment, onNavigate }) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Company</p>
-                  <p className="text-slate-900">{currentShipment.consignee?.company || 'N/A'}</p>
+                  <p className="text-slate-900">{shipmentData.consignee?.company || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Contact Name</p>
-                  <p className="text-slate-900">{currentShipment.consignee?.contactName || 'N/A'}</p>
+                  <p className="text-slate-900">{shipmentData.consignee?.contactName || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Email</p>
-                  <p className="text-slate-900">{currentShipment.consignee?.email || 'N/A'}</p>
+                  <p className="text-slate-900">{shipmentData.consignee?.email || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Phone</p>
-                  <p className="text-slate-900">{currentShipment.consignee?.phone || 'N/A'}</p>
+                  <p className="text-slate-900">{shipmentData.consignee?.phone || 'N/A'}</p>
                 </div>
                 <div className="col-span-2">
                   <p className="text-slate-500 text-sm mb-1">Address</p>
                   <p className="text-slate-900">
-                    {currentShipment.consignee?.address1}{currentShipment.consignee?.address2 ? ` ${currentShipment.consignee.address2}` : ''}, {currentShipment.consignee?.city}, {currentShipment.consignee?.state} {currentShipment.consignee?.postalCode}
+                    {[shipmentData.consignee?.address1, shipmentData.consignee?.address2].filter(Boolean).join(' ')}, {shipmentData.consignee?.city}, {shipmentData.consignee?.state} {shipmentData.consignee?.postalCode}
                   </p>
                 </div>
                 <div>
                   <p className="text-slate-500 text-sm mb-1">Country</p>
-                  <p className="text-slate-900">{currentShipment.consignee?.country || 'N/A'}</p>
+                  <p className="text-slate-900">{shipmentData.consignee?.country || 'N/A'}</p>
                 </div>
                 
               </div>
@@ -458,7 +582,7 @@ export function ShipmentDetails({ shipment, onNavigate }) {
             {/* Packages & Products Section */}
             <div className="mb-8 pb-6 border-b border-slate-200">
               <h3 className="text-slate-900 font-semibold mb-4">Packages & Products</h3>
-              {currentShipment.packages && currentShipment.packages.length > 0 ? (
+              {currentShipment?.packages && currentShipment.packages.length > 0 ? (
                 <div className="space-y-6">
                   {currentShipment.packages.map((pkg, pkgIdx) => (
                     <div key={pkgIdx} className="border border-slate-200 rounded-lg p-4 bg-slate-50">
@@ -557,7 +681,7 @@ export function ShipmentDetails({ shipment, onNavigate }) {
               )}
             </div>
             
-            {currentShipment.brokerApproval === 'documents-requested' && (
+            {currentShipment?.brokerApproval === 'documents-requested' && (
               <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
                 <div className="flex items-start gap-3">
                   <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -566,9 +690,9 @@ export function ShipmentDetails({ shipment, onNavigate }) {
                     <p className="text-red-700 text-sm mb-2">
                       The broker has requested additional documentation. Please upload the missing documents below.
                     </p>
-                    {currentShipment.brokerNotes && (
+                    {currentShipment?.brokerNotes && (
                       <p className="text-red-800 text-sm italic border-l-2 border-red-400 pl-3 mt-2">
-                        Broker note: {currentShipment.brokerNotes}
+                        Broker note: {currentShipment?.brokerNotes}
                       </p>
                     )}
                   </div>
@@ -633,6 +757,8 @@ export function ShipmentDetails({ shipment, onNavigate }) {
                         <button
                           onClick={() => setViewingDocument({ name: doc.fileName || doc.name || doc.key, key: doc.key, shipmentId: currentShipment.id, source: 'form' })}
                           className="px-3 py-2 bg-slate-50 text-slate-700 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors text-sm"
+                          disabled={!currentShipment?.id}
+                          title={!currentShipment?.id ? "Shipment data loading..." : "View Document"}
                         >
                           View
                         </button>
@@ -656,12 +782,12 @@ export function ShipmentDetails({ shipment, onNavigate }) {
               ))}
 
               {/* Chat & Form Uploaded Documents Section */}
-              {currentShipment.uploadedDocuments && Object.keys(currentShipment.uploadedDocuments).length > 0 && (
+              {currentShipment?.uploadedDocuments && Object.keys(currentShipment.uploadedDocuments).length > 0 && (
                 <div className="mt-6 pt-6 border-t border-slate-200">
                   {/* Separate form documents from chat documents */}
                   {(() => {
-                    const formDocs = Object.entries(currentShipment.uploadedDocuments).filter(([_, doc]) => doc.source === 'form');
-                    const chatDocs = Object.entries(currentShipment.uploadedDocuments).filter(([_, doc]) => !doc.source || doc.source !== 'form');
+                    const formDocs = Object.entries(currentShipment?.uploadedDocuments || {}).filter(([_, doc]) => doc.source === 'form');
+                    const chatDocs = Object.entries(currentShipment?.uploadedDocuments || {}).filter(([_, doc]) => !doc.source || doc.source !== 'form');
                     
                     return (
                       <>
@@ -755,7 +881,7 @@ export function ShipmentDetails({ shipment, onNavigate }) {
                   <p className="text-slate-600 text-sm">Automated customs clearance analysis</p>
                 </div>
               </div>
-              {currentShipment.aiApproval === 'approved' && (
+              {aiApproval === 'approved' && (
                 <div className="px-4 py-2 bg-green-100 text-green-700 rounded-full text-sm font-bold flex items-center gap-2">
                   <CheckCircle className="w-4 h-4" />
                   ✓ APPROVED
@@ -771,7 +897,7 @@ export function ShipmentDetails({ shipment, onNavigate }) {
               </div>
             )}
 
-            {allRequiredDocsUploaded && currentShipment.aiApproval !== 'approved' && !aiProcessing && (
+            {allRequiredDocsUploaded && aiApproval !== 'approved' && !aiProcessing && (
               <div className="space-y-4">
                 <p className="text-slate-700">
                   Your documents are ready. Let our AI analyze compliance rules and regulations for your shipment.
@@ -799,7 +925,7 @@ export function ShipmentDetails({ shipment, onNavigate }) {
               </div>
             )}
 
-            {currentShipment.aiApproval === 'approved' && (
+            {aiApproval === 'approved' && (
               <div className="space-y-4">
                 <div className="p-4 bg-white rounded-lg border-2 border-green-300">
                   <p className="text-green-700 font-bold flex items-center gap-2">
@@ -816,7 +942,7 @@ export function ShipmentDetails({ shipment, onNavigate }) {
           </div>
 
           {/* Broker Approval Section - Only available after AI approval */}
-          {currentShipment.aiApproval === 'approved' && (
+          {aiApproval === 'approved' && (
             <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border-2 border-purple-200 p-8">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
@@ -828,13 +954,13 @@ export function ShipmentDetails({ shipment, onNavigate }) {
                     <p className="text-slate-600 text-sm">Get professional customs broker assistance</p>
                   </div>
                 </div>
-                {currentShipment.brokerApproval === 'approved' && (
+                {brokerApproval === 'approved' && (
                   <div className="px-4 py-2 bg-green-100 text-green-700 rounded-full text-sm font-bold flex items-center gap-2">
                     <CheckCircle className="w-4 h-4" />
                     ✓ APPROVED
                   </div>
                 )}
-                {currentShipment.brokerApproval === 'pending' && (
+                {brokerApproval === 'pending' && (
                   <div className="px-4 py-2 bg-blue-100 text-blue-700 rounded-full text-sm font-bold flex items-center gap-2">
                     <Clock className="w-4 h-4" />
                     IN REVIEW
@@ -867,14 +993,14 @@ export function ShipmentDetails({ shipment, onNavigate }) {
                 </div>
               )}
 
-              {currentShipment.brokerApproval === 'pending' && !requestingBroker && (
+              {brokerApproval === 'pending' && !requestingBroker && (
                 <div className="p-4 bg-white rounded-lg border-l-4 border-blue-500">
                   <p className="text-blue-900 font-medium">📋 Under Review by Broker</p>
                   <p className="text-blue-700 text-sm mt-2">A customs broker is reviewing your documentation. You'll be notified once review is complete.</p>
                 </div>
               )}
 
-              {currentShipment.brokerApproval === 'approved' && (
+              {brokerApproval === 'approved' && (
                 <div className="p-4 bg-green-100 rounded-lg border-2 border-green-400">
                   <p className="text-green-700 font-bold flex items-center gap-2">
                     <CheckCircle className="w-5 h-5" />
@@ -901,7 +1027,7 @@ export function ShipmentDetails({ shipment, onNavigate }) {
                 </div>
               </div>
               
-              {currentShipment.status !== 'token-generated' ? (
+              {currentShipment?.status !== 'token-generated' ? (
                 <button
                   onClick={handleGenerateToken}
                   className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all shadow-lg flex items-center gap-2"
@@ -915,12 +1041,12 @@ export function ShipmentDetails({ shipment, onNavigate }) {
                   <div className="p-4 bg-white rounded-lg border border-green-300">
                     <p className="text-slate-600 text-sm mb-2">Your Shipment Token</p>
                     <p className="text-2xl text-green-700 font-mono tracking-wider">
-                      {currentShipment.token || 'UPS-' + currentShipment.id.toUpperCase()}
+                      {tokenVal || (currentShipment?.id ? 'UPS-' + String(currentShipment.id).toUpperCase() : 'UPS-')}
                     </p>
                   </div>
                   <div className="flex gap-3">
                     <button
-                      onClick={() => onNavigate('booking', currentShipment)}
+                      onClick={() => currentShipment && onNavigate('booking', currentShipment)}
                       className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
                     >
                       <Box className="w-5 h-5" />
@@ -950,22 +1076,22 @@ export function ShipmentDetails({ shipment, onNavigate }) {
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <span className="text-slate-600 text-sm">AI Evaluation</span>
                 <span className={`px-2 py-1 rounded text-xs ${
-                  currentShipment.aiApproval === 'approved' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
+                  currentShipment?.aiApproval === 'approved' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
                 }`}>
-                  {currentShipment.aiApproval === 'approved' ? 'Approved' : 'Pending'}
+                  {currentShipment?.aiApproval === 'approved' ? 'Approved' : 'Pending'}
                 </span>
               </div>
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <span className="text-slate-600 text-sm">Broker Review</span>
                 <span className={`px-2 py-1 rounded text-xs ${
-                  currentShipment.brokerApproval === 'approved' ? 'bg-green-100 text-green-700' : 
-                  currentShipment.brokerApproval === 'pending' ? 'bg-blue-100 text-blue-700' :
-                  currentShipment.brokerApproval === 'documents-requested' ? 'bg-red-100 text-red-700' :
+                  currentShipment?.brokerApproval === 'approved' ? 'bg-green-100 text-green-700' : 
+                  currentShipment?.brokerApproval === 'pending' ? 'bg-blue-100 text-blue-700' :
+                  currentShipment?.brokerApproval === 'documents-requested' ? 'bg-red-100 text-red-700' :
                   'bg-slate-100 text-slate-600'
                 }`}>
-                  {currentShipment.brokerApproval === 'approved' ? 'Approved' : 
-                   currentShipment.brokerApproval === 'pending' ? 'In Review' :
-                   currentShipment.brokerApproval === 'documents-requested' ? 'Docs Needed' :
+                  {currentShipment?.brokerApproval === 'approved' ? 'Approved' : 
+                   currentShipment?.brokerApproval === 'pending' ? 'In Review' :
+                   currentShipment?.brokerApproval === 'documents-requested' ? 'Docs Needed' :
                    'Not Started'}
                 </span>
               </div>
@@ -1043,7 +1169,7 @@ export function ShipmentDetails({ shipment, onNavigate }) {
                   </div>
                 </div>
               )}
-              {currentShipment.aiApproval === 'approved' && (
+              {currentShipment?.aiApproval === 'approved' && (
                 <div className="flex gap-3">
                   <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
                     <Zap className="w-4 h-4 text-green-600" />
@@ -1054,7 +1180,7 @@ export function ShipmentDetails({ shipment, onNavigate }) {
                   </div>
                 </div>
               )}
-              {currentShipment.brokerApproval === 'approved' && (
+              {currentShipment?.brokerApproval === 'approved' && (
                 <div className="flex gap-3">
                   <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
                     <UserCheck className="w-4 h-4 text-green-600" />

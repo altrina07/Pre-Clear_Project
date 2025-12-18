@@ -1,7 +1,6 @@
-import axios from 'axios';
-
-const api = axios.create({ baseURL: '/api', withCredentials: false });
+import http from '../../api/http';
 
 export async function sendMessage(shipmentId, message, senderId = null) {
-  return api.post(`/chat/shipments/${shipmentId}/messages`, { message, senderId }).then(r => r.data);
+  const resp = await http.post(`/chat/shipments/${shipmentId}/messages`, { message, senderId });
+  return resp.data;
 }

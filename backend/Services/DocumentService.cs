@@ -36,7 +36,7 @@ namespace PreClear.Api.Services
             if (!Directory.Exists(_uploadFolder)) Directory.CreateDirectory(_uploadFolder);
         }
 
-        public async Task<ShipmentDocument> UploadAsync(long shipmentId, long? uploadedBy, string originalFileName, Stream content, DocumentType docType)
+        public async Task<ShipmentDocument> UploadAsync(long shipmentId, long? uploadedBy, string originalFileName, Stream content, string docType)
         {
             if (content == null) throw new ArgumentNullException(nameof(content));
             if (string.IsNullOrWhiteSpace(originalFileName)) throw new ArgumentException("filename required", nameof(originalFileName));
@@ -58,16 +58,16 @@ namespace PreClear.Api.Services
             {
                 ShipmentId = shipmentId,
                 DocumentType = docType,
-                FileUrl = unique, // will be resolved by controller to a download route
+                FileName = Path.GetFileName(originalFileName),
+                FilePath = unique,
                 UploadedBy = uploadedBy,
-                UploadedAt = DateTime.UtcNow,
-                Version = 1
+                UploadedAt = DateTime.UtcNow
             };
 
             var created = await _repo.AddAsync(doc);
 
-            // update FileUrl to point to API download endpoint
-            created.FileUrl = $"/api/documents/{created.Id}/download";
+            // update FilePath to point to API download endpoint
+            created.FilePath = $"/api/documents/{created.Id}/download";
             await _repo.UpdateAsync(created);
 
             _logger.LogInformation("Uploaded document {DocId} for shipment {ShipmentId}", created.Id, shipmentId);
@@ -83,7 +83,7 @@ namespace PreClear.Api.Services
         {
             var doc = await _repo.FindAsync(id);
             if (doc == null) return (null, null);
-            var fileName = doc.FileUrl;
+            var fileName = doc.FilePath;
             // If FileUrl is an api path, the stored unique filename may be in Details; we stored unique filename initially
             // attempt to resolve by checking both possible stored values
             string candidate = Path.Combine(_uploadFolder, fileName ?? string.Empty);
@@ -95,6 +95,11 @@ namespace PreClear.Api.Services
 
             if (candidate != null && File.Exists(candidate)) return (doc, candidate);
             return (doc, null);
+        }
+
+        public async Task<bool> MarkAsUploadedAsync(long shipmentId, string documentName)
+        {
+            return await _repo.MarkAsUploadedAsync(shipmentId, documentName);
         }
     }
 }

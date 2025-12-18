@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
@@ -64,14 +65,17 @@ namespace PreClear.Api.Services
             if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
                 return (false, null, "invalid_credentials",null,null);
 
-            var user = _db.Users.FirstOrDefault(u => u.Email == email);
+            var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Email == email);
             if (user == null) return (false, null, "invalid_credentials", null, null);
 
             if (!VerifyPassword(password, user.PasswordHash)) return (false, null, "invalid_credentials", null, null);
 
             // Create JWT
             var jwtKey = _config["Jwt:Key"] ?? Environment.GetEnvironmentVariable("JWT_KEY");
-            if (string.IsNullOrEmpty(jwtKey)) return (false, null, "jwt_key_not_configured", null, null);
+            if (string.IsNullOrEmpty(jwtKey)) throw new InvalidOperationException("JWT Secret not configured");
+
+            var jwtIssuer = _config["Jwt:Issuer"] ?? "PreClearAPI";
+            var jwtAudience = _config["Jwt:Audience"] ?? "PreClearUsers";
 
             var claims = new[] {
                 new System.Collections.Generic.KeyValuePair<string,string>("sub", user.Id.ToString()),
@@ -79,7 +83,7 @@ namespace PreClear.Api.Services
                 new System.Collections.Generic.KeyValuePair<string,string>("role", user.Role ?? "")
             };
 
-            var token = JwtTokenGenerator.GenerateToken(claims, jwtKey, 60 * 24 * 7); // 7 days
+            var token = JwtTokenGenerator.GenerateToken(claims, jwtKey, 60 * 24 * 7, jwtIssuer, jwtAudience); // 7 days
             return (true, token, null, user.Id, user.Role);
         }
 
